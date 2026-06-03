@@ -16,6 +16,26 @@ link() {
   echo "Linked $dst"
 }
 
+inject_source() {
+  local line="$1"
+  local target="$HOME/.zshrc"
+
+  if grep -qF "$line" "$target" 2>/dev/null; then
+    echo "Already present in .zshrc: $line"
+  else
+    echo "$line" >> "$target"
+    echo "Injected into .zshrc: $line"
+  fi
+}
+
 link ".gitconfig"
 
-echo "Done."
+mkdir -p "$HOME/.zsh"
+link ".zsh/git-stack.zsh"
+
+inject_source "source ~/.zsh/git-stack.zsh"
+
+echo "Done. Reload your shell:"
+echo ""
+echo "  source ~/.zshrc"
+echo ""
