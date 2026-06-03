@@ -17,3 +17,7 @@
 	push-stack = "!f() { BRANCH=${1-HEAD}; git stack $BRANCH | xargs -I {} git push --force-with-lease origin {}; };f "
 	stack-down = "!f() { BRANCH=$(git rev-parse --abbrev-ref HEAD); PARENT=$(git stack \"$BRANCH\" | sed -n '2p'); if [ -z \"$PARENT\" ]; then echo 'Already at bottom of stack'; else git checkout \"$PARENT\"; fi; }; f"
 	stack-up = "!f() { BRANCH=$(git rev-parse --abbrev-ref HEAD); CHILD=$(git branch --format='%(refname:short)' | while read b; do if [ \"$b\" != \"$BRANCH\" ]; then POS=$(git stack \"$b\" | grep -n \"^$BRANCH$\" | cut -d: -f1); if [ \"$POS\" = \"2\" ]; then echo \"$b\"; fi; fi; done | head -1); if [ -z \"$CHILD\" ]; then echo 'No child branch found'; else git checkout \"$CHILD\"; fi; }; f"
+	gsk  = stack
+	gps  = push-stack
+	gsku = stack-up
+	gskd = stack-down
