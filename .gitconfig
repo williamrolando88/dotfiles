@@ -1,0 +1,19 @@
+[user]
+	name = William Morales
+	email = william.rolando88@hotmail.com
+[core]
+	editor = code --wait
+	pager = 
+[push]
+	autoSetupRemote = true
+[pull]
+	rebase = true
+[rebase]
+	updateRefs = true
+[alias]
+	default-branch = !git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@'
+	merge-base-origin = "!f() { git merge-base ${1-HEAD} origin/$(git default-branch); };f "
+	stack = "!f() { BRANCH=${1-HEAD}; MERGE_BASE=$(git merge-base-origin $BRANCH); git log --decorate-refs=refs/heads --simplify-by-decoration --pretty=format:\"%(decorate:prefix=,suffix=,tag=,separator=%n)\" $MERGE_BASE..$BRANCH; };f "
+	push-stack = "!f() { BRANCH=${1-HEAD}; git stack $BRANCH | xargs -I {} git push --force-with-lease origin {}; };f "
+	stack-down = "!f() { BRANCH=$(git rev-parse --abbrev-ref HEAD); PARENT=$(git stack \"$BRANCH\" | sed -n '2p'); if [ -z \"$PARENT\" ]; then echo 'Already at bottom of stack'; else git checkout \"$PARENT\"; fi; }; f"
+	stack-up = "!f() { BRANCH=$(git rev-parse --abbrev-ref HEAD); CHILD=$(git branch --format='%(refname:short)' | while read b; do if [ \"$b\" != \"$BRANCH\" ]; then POS=$(git stack \"$b\" | grep -n \"^$BRANCH$\" | cut -d: -f1); if [ \"$POS\" = \"2\" ]; then echo \"$b\"; fi; fi; done | head -1); if [ -z \"$CHILD\" ]; then echo 'No child branch found'; else git checkout \"$CHILD\"; fi; }; f"
