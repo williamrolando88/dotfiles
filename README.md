@@ -2,56 +2,43 @@
 
 Personal dotfiles for William Morales.
 
-## What's included
+Modern developer environment based on **Fish**, **Kitty**, **Starship**, **Fira Code Nerd Font**, **Homebrew (Linuxbrew)**, and **AI Agent configurations**.
 
-| File | Description |
-|------|-------------|
-| `.gitconfig` | Git config: editor, push/pull defaults, and stacked-branch aliases |
+## Estructura del repositorio
 
-### Git stack aliases
-
-| Alias | Shortcut | Description |
-|-------|----------|-------------|
-| `git stack` | `git gsk` | List branches in the current stack (from merge-base to HEAD) |
-| `git push-stack` | `git gps` | Force-push all branches in the stack |
-| `git stack-up` | `git gsku` | Checkout the child branch in the stack |
-| `git stack-down` | `git gskd` | Checkout the parent branch in the stack |
-
-Shortcuts are chosen to avoid collisions with the [oh-my-zsh git plugin](https://github.com/ohmyzsh/ohmyzsh/blob/master/plugins/git/README.md).
-
-## Install
-
-Run from anywhere:
-
-```sh
-bash /path/to/.dotfiles/install.sh
+```text
+dotfiles/
+├── .old/                  # Configuraciones previas archivadas (Zsh, scripts anteriores)
+├── fish/
+│   └── config.fish        # Abreviaciones Git, Docker, Strata y utilidades interactivas
+├── kitty/
+│   └── kitty.conf         # Tema Tokyo Night, FiraCode ligaduras y atajos de ventanas/tabs
+├── starship/
+│   └── starship.toml      # Prompt minimalista con soporte para Git, Bun, Node, Python, etc.
+├── git/
+│   └── .gitconfig         # Identidad Git y configuración estándar (rebase = true, main)
+├── agents/
+│   ├── AGENTS.md          # Reglas maestras y directrices para agentes de IA
+│   └── mcp.json           # Servidores MCP globales (Playwright, etc.)
+├── Brewfile               # Paquetes y herramientas CLI modernas gestionadas con Homebrew
+├── install.sh             # Script de instalación idempotente con symlinks
+└── README.md
 ```
 
-The script symlinks each dotfile into `$HOME`, backing up any existing file as `<file>.bak`.
+## Instalación en un equipo nuevo
 
-## Extending
-
-To track a new dotfile (e.g. `.zshrc`):
-
-1. Copy the file into this repo:
-   ```sh
-   cp ~/.zshrc ~/.dotfiles/.zshrc
+1. Clona el repositorio:
+   ```bash
+   git clone git@github.com:williamrolando88/dotfiles.git ~/repos/dotfiles
+   cd ~/repos/dotfiles
    ```
 
-2. Add a `link` call at the bottom of `install.sh`:
-   ```sh
-   link ".zshrc"
+2. Ejecuta el instalador:
+   ```bash
+   ./install.sh
    ```
 
-3. Re-run `install.sh` to create the symlink:
-   ```sh
-   bash ~/.dotfiles/install.sh
-   ```
-
-The `link` helper works for any path relative to `$HOME`, including nested ones:
-
-```sh
-link ".config/starship.toml"   # creates $HOME/.config/starship.toml → $DOTFILES_DIR/.config/starship.toml
-```
-
-Just mirror the same directory structure inside the repo.
+El script se encarga de:
+- Enlazar automáticamente las configuraciones a `~/.config/fish`, `~/.config/kitty`, `~/.config/starship.toml`, `~/.gitconfig`.
+- Vincular las reglas de agentes a `~/.agents/` y `~/.gemini/config/`.
+- Ofrecer la instalación desatendida de todas las herramientas CLI mediante `brew bundle`.
