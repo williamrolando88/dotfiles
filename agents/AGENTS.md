@@ -12,7 +12,7 @@
   - Sourcing files: `source` / `.` works, but avoid bashisms.
 - Be aware of Kitty terminal features (true color, clipboard protocols, Kitty kitten commands). Config lives at `~/.config/kitty/kitty.conf`, with OS-specific overrides in `macos.conf` / `linux.conf` next to it.
 - Starship prompt is configured via `~/.config/starship.toml`.
-- Fish plugins are managed with **fisher**. The plugin list lives in the dotfiles repo (`fish/fish_plugins`, linked to `~/.config/fish/fish_plugins`), so add or remove plugins with `fisher install` / `fisher remove` and they stay versioned. Prefer a maintained fisher plugin over hardcoding abbreviations: git abbreviations come from `jhillyerd/plugin-git`, with a few personal overrides in `fish/abbr/git-overrides.fish`.
+- Fish plugins are managed with **fisher**. The plugin list lives in the dotfiles repo (`fish/fish_plugins`, linked to `~/.config/fish/fish_plugins`), so add or remove plugins with `fisher install` / `fisher remove` and they stay versioned. Prefer a maintained fisher plugin over hardcoding abbreviations: git abbreviations come from `jhillyerd/plugin-git`, plus a few extras the plugin lacks in `fish/abbr/git-overrides.fish`.
 - Other abbreviation groups live in `fish/abbr/*.fish` and the user enables them per machine with `./install.sh abbr`. Don't add abbreviations directly to `config.fish`.
 - Font is FiraCode Nerd Font (supports ligatures and developer glyphs).
 
