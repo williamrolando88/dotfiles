@@ -20,7 +20,7 @@ dotfiles/
 ├── git/
 │   └── .gitconfig         # Identidad Git y configuración estándar (rebase = true, main)
 ├── agents/
-│   ├── AGENTS.md          # Reglas maestras y directrices para agentes de IA
+│   ├── AGENTS.md          # Instrucciones compartidas para Claude Code y Antigravity
 │   └── mcp.json           # Servidores MCP globales (Playwright, etc.)
 ├── Brewfile               # Herramientas CLI opcionales (selección interactiva)
 ├── install.sh             # Script de instalación idempotente con symlinks
@@ -48,7 +48,8 @@ ya existe antes de preguntar si instalar o cambiar algo:
 | `kitty`  | Detecta Kitty (PATH o app ya instalada) o lo instala con `brew install --cask kitty` |
 | `fish`   | Detecta Fish o lo instala con `brew install fish` |
 | `prompt` | Starship y FiraCode Nerd Font |
-| `links`  | Symlinks a `~/.config`, `~/.gitconfig`, `~/.agents` y `~/.gemini/config`. Si ya existe un archivo distinto, lo respalda como `<archivo>.bak.<timestamp>` |
+| `links`  | Symlinks a `~/.config` y `~/.gitconfig`. Si ya existe un archivo distinto, lo respalda como `<archivo>.bak.<timestamp>` |
+| `agents` | Enlaza `agents/` en `~/.agents`. Antigravity: symlinks en `~/.gemini/config`. Claude Code: agrega `@~/.agents/AGENTS.md` a `~/.claude/CLAUDE.md` y registra los servidores de `mcp.json` con `claude mcp add-json --scope user` |
 | `shell`  | Opcional: agrega fish a `/etc/shells` y lo deja como login shell (`chsh`). Kitty abre fish aunque se omita |
 | `tools`  | Checklist del Brewfile: cada paquete aparece marcado si está instalado. Al aplicar, instala lo marcado que falta y desinstala lo desmarcado, previa confirmación. Solo afecta paquetes del Brewfile |
 

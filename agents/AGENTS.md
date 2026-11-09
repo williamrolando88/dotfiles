@@ -3,20 +3,20 @@
 - **Terminal Emulator**: Kitty
 - **Shell**: Fish (`fish`)
 - **Prompt**: Starship (`starship`)
-- **Font**: Fira Code (`FiraCode`)
+- **Font**: FiraCode Nerd Font
 
 ## Command & Scripting Guidelines
-- When providing terminal commands or suggestions for the user to run interactively in their console, format them for **Fish shell** syntax:
+- When providing terminal commands or suggestions for the user to run interactively in their console, format them for **Fish shell** syntax. This applies only to commands the user types; commands you execute yourself run in your own tool's shell (bash/zsh), so keep using that syntax there:
   - Environment variables: `set -gx VAR "value"` (or `set -x VAR "value"`) instead of `export VAR="value"`.
   - Config paths: `~/.config/fish/config.fish` instead of `.bashrc` / `.zshrc`.
   - Sourcing files: `source` / `.` works, but avoid bashisms.
-- Be aware of Kitty terminal features (true color, clipboard protocols, Kitty kitten commands, config at `~/.config/kitty/kitty.conf`).
+- Be aware of Kitty terminal features (true color, clipboard protocols, Kitty kitten commands). Config lives at `~/.config/kitty/kitty.conf`, with OS-specific overrides in `macos.conf` / `linux.conf` next to it.
 - Starship prompt is configured via `~/.config/starship.toml`.
-- Font is Fira Code (supports ligatures and developer glyphs).
+- Font is FiraCode Nerd Font (supports ligatures and developer glyphs).
 
 ## Available Modern CLI Tooling (Prefer Over Legacy Tools)
 
-The following modern CLI tools are installed globally via Linuxbrew (`/home/linuxbrew/.linuxbrew/bin`) and MUST be leveraged whenever the task requires them:
+The following tools are optional: the dotfiles installer lets the user pick them from the Brewfile, so a given machine (macOS or Linux, via Homebrew) may not have all of them. Check with `command -v <tool>` before relying on one, prefer it when present, and fall back to the standard tool when it is missing:
 - **AST Search & Refactoring**: `ast-grep` (binary `ast-grep`), `difftastic` (binary `difft`). Prioritize `ast-grep` for syntax-aware code searches and AST replacements in TypeScript/JS/Python over brittle regex, and `difft` for structural AST diffs.
 - **Fast Search & Traversal**: `ripgrep` (`rg`), `fd`. Use `rg` (with `--json` when structured data is helpful) over `grep`, and `fd` over `find`.
 - **Structured Data & Configs**:

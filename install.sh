@@ -5,7 +5,7 @@ set -euo pipefail
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BREWFILE="$DOTFILES_DIR/Brewfile"
 OS="$(uname -s)"
-ALL_STEPS="kitty fish prompt links shell tools"
+ALL_STEPS="kitty fish prompt links agents shell tools"
 
 usage() {
   cat <<EOF
@@ -18,6 +18,7 @@ existe y pregunta antes de instalar o cambiar algo.
   fish     Shell Fish
   prompt   Starship y FiraCode Nerd Font
   links    Symlinks de configuración (respalda archivos existentes)
+  agents   AGENTS.md y MCP para Claude Code y Antigravity
   shell    Cambiar el login shell a fish (opcional, requiere sudo)
   tools    Checklist del Brewfile: instala lo marcado y desinstala lo desmarcado
 EOF
@@ -94,6 +95,9 @@ link_file() {
   elif [ -e "$dst" ]; then
     if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
       echo "  [~] Contenido idéntico, reemplazando por symlink: $dst"
+      rm "$dst"
+    elif [ -f "$dst" ] && [ ! -s "$dst" ]; then
+      echo "  [~] Archivo vacío, reemplazando por symlink: $dst"
       rm "$dst"
     else
       local backup
@@ -361,12 +365,71 @@ step_links() {
 
   # Git
   link_file "$DOTFILES_DIR/git/.gitconfig" "$HOME/.gitconfig"
+}
 
-  # Agents / AI Workspaces (Antigravity & Pi)
+# Claude Code no lee ~/.agents/AGENTS.md ni un mcp.json externo de forma persistente:
+# las instrucciones se importan con @ desde ~/.claude/CLAUDE.md y los servidores MCP
+# se registran en scope user con `claude mcp add-json`.
+setup_claude_code() {
+  local claude_md="$HOME/.claude/CLAUDE.md" import_line="@~/.agents/AGENTS.md"
+
+  if [ -f "$claude_md" ] && grep -qxF "$import_line" "$claude_md"; then
+    echo "  [=] ~/.claude/CLAUDE.md ya importa AGENTS.md"
+  elif confirm "¿Agregar '$import_line' al inicio de ~/.claude/CLAUDE.md?"; then
+    mkdir -p "$(dirname "$claude_md")"
+    if [ -f "$claude_md" ]; then
+      local backup tmp
+      backup="$claude_md.bak.$(date +%Y%m%d-%H%M%S)"
+      cp "$claude_md" "$backup"
+      tmp="$(mktemp "${TMPDIR:-/tmp}/dotfiles-claude-md.XXXXXX")"
+      { echo "$import_line"; echo ""; cat "$claude_md"; } > "$tmp"
+      cat "$tmp" > "$claude_md"
+      rm -f "$tmp"
+      echo "  [OK] Import agregado (respaldo: $backup)"
+    else
+      echo "$import_line" > "$claude_md"
+      echo "  [OK] Creado ~/.claude/CLAUDE.md con el import"
+    fi
+  else
+    echo "  Import omitido."
+  fi
+
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "  [!] jq no está instalado; omitiendo el registro de servidores MCP."
+    return
+  fi
+  local name server
+  for name in $(jq -r '.mcpServers | keys[]' "$DOTFILES_DIR/agents/mcp.json"); do
+    if [ -f "$HOME/.claude.json" ] && jq -e --arg n "$name" '.mcpServers // {} | has($n)' "$HOME/.claude.json" >/dev/null; then
+      echo "  [=] MCP '$name' ya registrado en Claude Code"
+    elif confirm "¿Registrar el servidor MCP '$name' en Claude Code (scope user)?"; then
+      server="$(jq -c --arg n "$name" '.mcpServers[$n]' "$DOTFILES_DIR/agents/mcp.json")"
+      claude mcp add-json --scope user "$name" "$server" || echo "  [!] No se pudo registrar '$name'"
+    else
+      echo "  MCP '$name' omitido."
+    fi
+  done
+}
+
+step_agents() {
+  step "Agentes de IA (Claude Code y Antigravity)"
+  # Fuente única: ~/.agents enlaza a los archivos del repo
   link_file "$DOTFILES_DIR/agents/AGENTS.md" "$HOME/.agents/AGENTS.md"
   link_file "$DOTFILES_DIR/agents/mcp.json" "$HOME/.agents/mcp.json"
-  link_file "$HOME/.agents/mcp.json" "$HOME/.gemini/config/mcp_config.json"
-  link_file "$HOME/.agents/AGENTS.md" "$HOME/.gemini/config/GEMINI.md"
+
+  # Antigravity lee GEMINI.md y mcp_config.json (mismo formato mcpServers) desde ~/.gemini/config
+  if command -v agy >/dev/null 2>&1 || [ -d "$HOME/.gemini" ]; then
+    link_file "$HOME/.agents/AGENTS.md" "$HOME/.gemini/config/GEMINI.md"
+    link_file "$HOME/.agents/mcp.json" "$HOME/.gemini/config/mcp_config.json"
+  else
+    echo "  Antigravity no detectado; omitiendo."
+  fi
+
+  if command -v claude >/dev/null 2>&1; then
+    setup_claude_code
+  else
+    echo "  Claude Code no detectado; omitiendo."
+  fi
 }
 
 step_default_shell() {
@@ -409,6 +472,7 @@ run_step() {
     fish)   step_fish ;;
     prompt) step_prompt ;;
     links)  step_links ;;
+    agents) step_agents ;;
     shell)  step_default_shell ;;
     tools)  step_tools ;;
   esac
