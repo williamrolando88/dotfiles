@@ -140,20 +140,38 @@ if status is-interactive
 end
 
 # Added by Antigravity CLI installer
-set -gx PATH "$HOME/.local/bin" $PATH
-eval (/home/linuxbrew/.linuxbrew/bin/brew shellenv)
+fish_add_path -g $HOME/.local/bin
+
+# Homebrew: usa el brew del PATH o el primero que exista en los prefijos por defecto
+# (macOS Apple Silicon, macOS Intel, Linuxbrew)
+set -l brew_bin (command -s brew)
+if test -z "$brew_bin"
+    for candidate in /opt/homebrew/bin/brew /usr/local/bin/brew /home/linuxbrew/.linuxbrew/bin/brew $HOME/.linuxbrew/bin/brew
+        if test -x $candidate
+            set brew_bin $candidate
+            break
+        end
+    end
+end
+if test -n "$brew_bin"
+    $brew_bin shellenv fish | source
+end
 
 # Homebrew completions for fish
-if test -d "$HOMEBREW_PREFIX/share/fish/vendor_completions.d"
+if set -q HOMEBREW_PREFIX; and test -d "$HOMEBREW_PREFIX/share/fish/vendor_completions.d"
     set -p fish_complete_path "$HOMEBREW_PREFIX/share/fish/vendor_completions.d"
 end
 
 # Initialize Starship prompt
-starship init fish | source
+if type -q starship
+    starship init fish | source
+end
 
 # Initialize mise-en-place
-if status is-interactive
-    mise activate fish | source
-else
-    mise activate fish --shims | source
+if type -q mise
+    if status is-interactive
+        mise activate fish | source
+    else
+        mise activate fish --shims | source
+    end
 end
