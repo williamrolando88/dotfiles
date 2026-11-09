@@ -13,3 +13,7 @@
 	rebase = true
 [rebase]
 	updateRefs = true
+# Ajustes propios de cada máquina (p. ej. identidad de trabajo), fuera del repo.
+# Va al final para que sus valores tengan prioridad; si el archivo no existe, se ignora.
+[include]
+	path = ~/.gitconfig.local
