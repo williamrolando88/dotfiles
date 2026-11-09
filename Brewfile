@@ -17,8 +17,6 @@ brew "grpcurl"
 brew "herdr"
 # Command-line benchmarking tool
 brew "hyperfine"
-# Keyboard handling library
-brew "libxkbcommon"
 # Polyglot runtime manager (asdf rust clone)
 brew "mise"
 # AI agent toolkit

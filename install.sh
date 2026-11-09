@@ -142,7 +142,7 @@ toggle_checked() {
 # instala lo marcado que falta y desinstala lo desmarcado que está instalado. Nunca toca
 # paquetes que no estén en el Brewfile.
 sync_brew_packages() {
-  local kinds=() names=() descs=() lines=() taps=() desc="" raw
+  local kinds=() names=() descs=() lines=() taps=() desc="" raw kind pkg
 
   while IFS= read -r raw || [ -n "$raw" ]; do
     if [[ "$raw" =~ ^#[[:space:]]*(.*)$ ]]; then
@@ -150,8 +150,16 @@ sync_brew_packages() {
     elif [[ "$raw" =~ ^tap[[:space:]] ]]; then
       taps+=("$raw")
     elif [[ "$raw" =~ ^(brew|cask|vscode)[[:space:]]+\"([^\"]+)\" ]]; then
-      kinds+=("${BASH_REMATCH[1]}")
-      names+=("${BASH_REMATCH[2]}")
+      kind="${BASH_REMATCH[1]}"
+      pkg="${BASH_REMATCH[2]}"
+      # Entradas condicionadas al SO (`if OS.linux?` / `if OS.mac?`) solo se listan en ese SO
+      if { [[ "$raw" =~ if[[:space:]]+OS\.linux\? ]] && [ "$OS" != "Linux" ]; } ||
+         { [[ "$raw" =~ if[[:space:]]+OS\.mac\? ]] && [ "$OS" != "Darwin" ]; }; then
+        desc=""
+        continue
+      fi
+      kinds+=("$kind")
+      names+=("$pkg")
       descs+=("$desc")
       lines+=("$raw")
       desc=""
@@ -407,12 +415,27 @@ setup_claude_code() {
     echo "  [!] jq no está instalado; omitiendo el registro de servidores MCP."
     return
   fi
-  local name server
+  local name server wanted current
   for name in $(jq -r '.mcpServers | keys[]' "$DOTFILES_DIR/agents/mcp.json"); do
-    if [ -f "$HOME/.claude.json" ] && jq -e --arg n "$name" '.mcpServers // {} | has($n)' "$HOME/.claude.json" >/dev/null; then
+    server="$(jq -c --arg n "$name" '.mcpServers[$n]' "$DOTFILES_DIR/agents/mcp.json")"
+    # Se compara solo command + args (Claude agrega campos propios como type y env)
+    wanted="$(jq -c --arg n "$name" '.mcpServers[$n] | {command, args}' "$DOTFILES_DIR/agents/mcp.json")"
+    current=""
+    if [ -f "$HOME/.claude.json" ]; then
+      current="$(jq -c --arg n "$name" '.mcpServers // {} | .[$n] // empty | {command, args}' "$HOME/.claude.json")"
+    fi
+
+    if [ "$current" = "$wanted" ]; then
       echo "  [=] MCP '$name' ya registrado en Claude Code"
+    elif [ -n "$current" ]; then
+      echo "  MCP '$name' difiere del repo: $current -> $wanted"
+      if confirm "¿Actualizar '$name' en Claude Code (scope user)?"; then
+        claude mcp remove --scope user "$name" >/dev/null &&
+          claude mcp add-json --scope user "$name" "$server" || echo "  [!] No se pudo actualizar '$name'"
+      else
+        echo "  MCP '$name' sin cambios."
+      fi
     elif confirm "¿Registrar el servidor MCP '$name' en Claude Code (scope user)?"; then
-      server="$(jq -c --arg n "$name" '.mcpServers[$n]' "$DOTFILES_DIR/agents/mcp.json")"
       claude mcp add-json --scope user "$name" "$server" || echo "  [!] No se pudo registrar '$name'"
     else
       echo "  MCP '$name' omitido."
@@ -422,6 +445,15 @@ setup_claude_code() {
 
 step_agents() {
   step "Agentes de IA (Claude Code y Antigravity)"
+
+  # jq es requerido: lo usa este paso (mcp.json) y los agentes lo dan por disponible.
+  # macOS lo trae en /usr/bin; en Linux puede faltar.
+  if command -v jq >/dev/null 2>&1; then
+    echo "  [=] jq disponible: $(jq --version)"
+  elif require_brew && confirm "jq es requerido y no está instalado. ¿Instalarlo con Homebrew?"; then
+    brew_install jq
+  fi
+
   # Fuente única: ~/.agents enlaza a los archivos del repo
   link_file "$DOTFILES_DIR/agents/AGENTS.md" "$HOME/.agents/AGENTS.md"
   link_file "$DOTFILES_DIR/agents/mcp.json" "$HOME/.agents/mcp.json"
