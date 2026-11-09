@@ -35,6 +35,7 @@ brew "xh"
 brew "yq"
 # jq for binary formats
 brew "wader/tap/fq", trusted: true
+cask "kitty"
 cask "font-fira-code-nerd-font"
 vscode "github.vscode-pull-request-github"
 vscode "vscode-icons-team.vscode-icons"
