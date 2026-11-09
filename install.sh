@@ -19,7 +19,7 @@ existe y pregunta antes de instalar o cambiar algo.
   prompt   Starship y FiraCode Nerd Font
   links    Symlinks de configuración (respalda archivos existentes)
   shell    Cambiar el login shell a fish (opcional, requiere sudo)
-  tools    Selección interactiva de herramientas del Brewfile
+  tools    Checklist del Brewfile: instala lo marcado y desinstala lo desmarcado
 EOF
 }
 
@@ -107,8 +107,10 @@ link_file() {
   echo "  [OK] Enlazado: $dst -> $src"
 }
 
-# Muestra los paquetes del Brewfile con su estado y permite elegir cuáles instalar.
-select_brew_packages() {
+# Checklist del Brewfile: cada paquete arranca marcado si está instalado. Al aplicar,
+# instala lo marcado que falta y desinstala lo desmarcado que está instalado. Nunca toca
+# paquetes que no estén en el Brewfile.
+sync_brew_packages() {
   local kinds=() names=() descs=() lines=() taps=() desc="" raw
 
   while IFS= read -r raw || [ -n "$raw" ]; do
@@ -125,47 +127,62 @@ select_brew_packages() {
     fi
   done < "$BREWFILE"
 
-  local installed_formulae installed_casks installed_ext=""
+  if [ "${#names[@]}" -eq 0 ]; then
+    echo "  El Brewfile no tiene paquetes."
+    return
+  fi
+
+  local installed_formulae installed_casks installed_ext="" has_code=0
   installed_formulae="$(brew list --formula -1 2>/dev/null || true)"
   installed_casks="$(brew list --cask -1 2>/dev/null || true)"
   if command -v code >/dev/null 2>&1; then
+    has_code=1
     installed_ext="$(code --list-extensions 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)"
   fi
 
-  local i status short pending=() statuses=()
-  echo ""
-  printf "  %3s  %-7s %-34s %-11s %s\n" "#" "Tipo" "Paquete" "Estado" "Descripción"
+  local i short installed=() checked=()
   for i in "${!names[@]}"; do
     short="${names[$i]##*/}"
+    installed[$i]=0
     case "${kinds[$i]}" in
-      brew)   grep -qxF "$short" <<< "$installed_formulae" && status="instalado" || status="pendiente" ;;
-      cask)   grep -qxF "$short" <<< "$installed_casks" && status="instalado" || status="pendiente" ;;
-      vscode) grep -qxF "$(echo "$short" | tr '[:upper:]' '[:lower:]')" <<< "$installed_ext" && status="instalado" || status="pendiente" ;;
+      brew)   grep -qxF "$short" <<< "$installed_formulae" && installed[$i]=1 ;;
+      cask)   grep -qxF "$short" <<< "$installed_casks" && installed[$i]=1 ;;
+      vscode) grep -qxF "$(echo "$short" | tr '[:upper:]' '[:lower:]')" <<< "$installed_ext" && installed[$i]=1 ;;
     esac
-    statuses+=("$status")
-    [ "$status" = "pendiente" ] && pending+=("$i")
-    printf "  %3d  %-7s %-34s %-11s %s\n" "$((i + 1))" "${kinds[$i]}" "${names[$i]}" "$status" "${descs[$i]}"
+    checked[$i]=${installed[$i]}
   done
-
-  if [ "${#pending[@]}" -eq 0 ]; then
-    echo ""
-    echo "  Todos los paquetes del Brewfile ya están instalados."
-    return
+  if [ "$has_code" -eq 0 ]; then
+    echo "  [Aviso] 'code' no está en el PATH: las extensiones de VS Code aparecen como no instaladas."
   fi
 
-  echo ""
-  echo "  Escribe los números a instalar separados por espacio (ej: 1 3 5-7),"
-  echo "  'a' para todos los pendientes, o Enter para omitir."
-  local answer=""
-  read -r -p "  Selección: " answer || true
+  local answer token start end n mark change
+  while true; do
+    echo ""
+    printf "  %-4s %3s  %-7s %-34s %-15s %s\n" "" "#" "Tipo" "Paquete" "Cambio" "Descripción"
+    for i in "${!names[@]}"; do
+      [ "${checked[$i]}" -eq 1 ] && mark="[x]" || mark="[ ]"
+      change=""
+      if [ "${checked[$i]}" -eq 1 ] && [ "${installed[$i]}" -eq 0 ]; then
+        change="+ instalar"
+      elif [ "${checked[$i]}" -eq 0 ] && [ "${installed[$i]}" -eq 1 ]; then
+        change="- desinstalar"
+      fi
+      printf "  %-4s %3d  %-7s %-34s %-15s %s\n" "$mark" "$((i + 1))" "${kinds[$i]}" "${names[$i]}" "$change" "${descs[$i]}"
+    done
 
-  local selected=() token start end n
-  if [ -z "$answer" ]; then
-    echo "  Omitiendo instalación de paquetes."
-    return
-  elif [ "$answer" = "a" ] || [ "$answer" = "A" ]; then
-    selected=("${pending[@]}")
-  else
+    echo ""
+    echo "  [x] = debe quedar instalado. Escribe números para marcar/desmarcar (ej: 2 4 6-8),"
+    echo "  Enter para continuar, o 'q' para salir sin cambios."
+    answer=""
+    read -r -p "  > " answer || true
+
+    if [ -z "$answer" ]; then
+      break
+    elif [ "$answer" = "q" ] || [ "$answer" = "Q" ]; then
+      echo "  Sin cambios."
+      return
+    fi
+
     for token in $answer; do
       if [[ "$token" =~ ^([0-9]+)-([0-9]+)$ ]]; then
         start="${BASH_REMATCH[1]}"
@@ -180,41 +197,73 @@ select_brew_packages() {
       for ((n = start; n <= end; n++)); do
         if [ "$n" -lt 1 ] || [ "$n" -gt "${#names[@]}" ]; then
           echo "  [Aviso] Fuera de rango: $n"
-        elif [ "${statuses[$((n - 1))]}" = "instalado" ]; then
-          echo "  [=] Ya instalado, se omite: ${names[$((n - 1))]}"
         else
-          selected+=("$((n - 1))")
+          checked[$((n - 1))]=$((1 - checked[n - 1]))
         fi
       done
     done
-  fi
+  done
 
-  if [ "${#selected[@]}" -eq 0 ]; then
-    echo "  Nada que instalar."
+  local to_install=() to_remove=()
+  for i in "${!names[@]}"; do
+    if [ "${checked[$i]}" -eq 1 ] && [ "${installed[$i]}" -eq 0 ]; then
+      to_install+=("$i")
+    elif [ "${checked[$i]}" -eq 0 ] && [ "${installed[$i]}" -eq 1 ]; then
+      to_remove+=("$i")
+    fi
+  done
+
+  if [ "${#to_install[@]}" -eq 0 ] && [ "${#to_remove[@]}" -eq 0 ]; then
+    echo "  Sin cambios: lo instalado ya coincide con la selección."
     return
   fi
 
-  # Brewfile temporal solo con lo elegido (y los taps que esos paquetes necesitan)
-  local tmp tap tap_name
-  tmp="$(mktemp "${TMPDIR:-/tmp}/dotfiles-brewfile.XXXXXX")"
-  for tap in ${taps[@]+"${taps[@]}"}; do
-    tap_name="$(echo "$tap" | sed -E 's/^tap[[:space:]]+"([^"]+)".*/\1/')"
-    for i in "${selected[@]}"; do
-      if [[ "${names[$i]}" == "$tap_name/"* ]]; then
-        echo "$tap" >> "$tmp"
-        break
-      fi
-    done
-  done
-  for i in "${selected[@]}"; do
-    echo "${lines[$i]}" >> "$tmp"
-  done
-
   echo ""
-  echo "==> Instalando selección:"
-  sed 's/^/    /' "$tmp"
-  brew bundle --file="$tmp" || echo "  [Aviso] brew bundle terminó con errores; revisa la salida anterior."
-  rm -f "$tmp"
+  echo "  Plan:"
+  for i in ${to_install[@]+"${to_install[@]}"}; do
+    echo "    + ${kinds[$i]} ${names[$i]}"
+  done
+  for i in ${to_remove[@]+"${to_remove[@]}"}; do
+    echo "    - ${kinds[$i]} ${names[$i]}"
+  done
+  if ! confirm "¿Aplicar estos cambios?"; then
+    echo "  Sin cambios."
+    return
+  fi
+
+  if [ "${#to_install[@]}" -gt 0 ]; then
+    # Brewfile temporal solo con lo que falta (y los taps que esos paquetes necesitan)
+    local tmp tap tap_name
+    tmp="$(mktemp "${TMPDIR:-/tmp}/dotfiles-brewfile.XXXXXX")"
+    for tap in ${taps[@]+"${taps[@]}"}; do
+      tap_name="$(echo "$tap" | sed -E 's/^tap[[:space:]]+"([^"]+)".*/\1/')"
+      for i in "${to_install[@]}"; do
+        if [[ "${names[$i]}" == "$tap_name/"* ]]; then
+          echo "$tap" >> "$tmp"
+          break
+        fi
+      done
+    done
+    for i in "${to_install[@]}"; do
+      echo "${lines[$i]}" >> "$tmp"
+    done
+    echo ""
+    echo "==> Instalando"
+    brew bundle --file="$tmp" || echo "  [!] brew bundle terminó con errores; revisa la salida anterior."
+    rm -f "$tmp"
+  fi
+
+  if [ "${#to_remove[@]}" -gt 0 ]; then
+    echo ""
+    echo "==> Desinstalando"
+    for i in "${to_remove[@]}"; do
+      case "${kinds[$i]}" in
+        brew)   brew uninstall "${names[$i]}" ;;
+        cask)   brew uninstall --cask "${names[$i]}" ;;
+        vscode) code --uninstall-extension "${names[$i]}" ;;
+      esac || echo "  [!] No se pudo desinstalar ${names[$i]} (¿otro paquete depende de él?)"
+    done
+  fi
 }
 
 # Kitty puede estar instalado fuera de Homebrew (app descargada, instalador oficial),
@@ -348,10 +397,10 @@ step_tools() {
   step "Herramientas del Brewfile"
   require_brew || return 0
   if [ ! -t 0 ]; then
-    echo "  Sesión no interactiva: omitiendo selección de paquetes."
+    echo "  Sesión no interactiva: omitiendo la checklist de herramientas."
     return
   fi
-  select_brew_packages
+  sync_brew_packages
 }
 
 run_step() {

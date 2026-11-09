@@ -50,7 +50,10 @@ ya existe antes de preguntar si instalar o cambiar algo:
 | `prompt` | Starship y FiraCode Nerd Font |
 | `links`  | Symlinks a `~/.config`, `~/.gitconfig`, `~/.agents` y `~/.gemini/config`. Si ya existe un archivo distinto, lo respalda como `<archivo>.bak.<timestamp>` |
 | `shell`  | Opcional: agrega fish a `/etc/shells` y lo deja como login shell (`chsh`). Kitty abre fish aunque se omita |
-| `tools`  | Lista el Brewfile con el estado de cada paquete y permite elegir cuáles instalar |
+| `tools`  | Checklist del Brewfile: cada paquete aparece marcado si está instalado. Al aplicar, instala lo marcado que falta y desinstala lo desmarcado, previa confirmación. Solo afecta paquetes del Brewfile |
+
+Para agregar o quitar herramientas de la lista, edita el `Brewfile`: el comentario `#` sobre
+cada línea es la descripción que aparece en la checklist.
 
 Se puede ejecutar un paso suelto, por ejemplo `./install.sh links` o `./install.sh kitty fish`.
 Ejecutarlo de nuevo es seguro: lo que ya está instalado o enlazado se omite.
