@@ -3,7 +3,13 @@
 	email = william.rolando88@hotmail.com
 [init]
 	defaultBranch = main
+[core]
+	editor = nano
+	pager =
+	autocrlf = input
+[push]
+	autoSetupRemote = true
 [pull]
 	rebase = true
-[core]
-	autocrlf = input
+[rebase]
+	updateRefs = true
