@@ -25,8 +25,6 @@ brew "mise"
 brew "pi-coding-agent"
 # Search tool like grep and The Silver Searcher
 brew "ripgrep"
-# Cross-shell prompt for astronauts
-brew "starship"
 # Command-line tool for Vultr services
 brew "vultr-cli"
 # Friendly and fast tool for sending HTTP requests
@@ -35,7 +33,5 @@ brew "xh"
 brew "yq"
 # jq for binary formats
 brew "wader/tap/fq", trusted: true
-cask "kitty"
-cask "font-fira-code-nerd-font"
 vscode "github.vscode-pull-request-github"
 vscode "vscode-icons-team.vscode-icons"
