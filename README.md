@@ -11,7 +11,8 @@ dotfiles/
 ├── .old/                  # Configuraciones previas archivadas (Zsh, scripts anteriores)
 ├── fish/
 │   ├── config.fish        # Homebrew, Starship, mise y carga de los grupos de abreviaciones habilitados
-│   └── abbr/              # Grupos de abreviaciones (git, docker, strata, antigravity)
+│   ├── fish_plugins       # Plugins gestionados con fisher (plugin-git para las abreviaciones de git)
+│   └── abbr/              # Grupos de abreviaciones (git-overrides, docker, strata, antigravity)
 ├── kitty/
 │   ├── kitty.conf         # Tema Tokyo Night y FiraCode ligaduras (compartido)
 │   ├── macos.conf         # Atajos con cmd, Option como Alt, prefijos de Homebrew
@@ -50,6 +51,7 @@ ya existe antes de preguntar si instalar o cambiar algo:
 | `fish`   | Detecta Fish o lo instala con `brew install fish` |
 | `prompt` | Starship y FiraCode Nerd Font |
 | `links`  | Symlinks a `~/.config` y `~/.gitconfig`. Si ya existe un archivo distinto, lo respalda como `<archivo>.bak.<timestamp>` |
+| `plugins` | Instala fisher (Homebrew), enlaza `fish/fish_plugins` y sincroniza con `fisher update`. Las abreviaciones de git vienen de `jhillyerd/plugin-git` |
 | `abbr`   | Checklist de los grupos de `fish/abbr/`: muestra si el programa está instalado (solo informativo) y enlaza los grupos marcados en `~/.config/fish/abbr.d/`, que `config.fish` carga. Los desmarcados se quitan; un archivo propio en esa carpeta no se toca |
 | `agents` | Enlaza `agents/` en `~/.agents`. Antigravity: symlinks en `~/.gemini/config`. Claude Code: agrega `@~/.agents/AGENTS.md` a `~/.claude/CLAUDE.md` y registra los servidores de `mcp.json` con `claude mcp add-json --scope user` |
 | `shell`  | Opcional: agrega fish a `/etc/shells` y lo deja como login shell (`chsh`). Kitty abre fish aunque se omita |

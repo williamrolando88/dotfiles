@@ -1,7 +1,8 @@
 if status is-interactive
     # Grupos de abreviaciones habilitados con `./install.sh abbr` (symlinks a fish/abbr/)
+    # test -f descarta symlinks rotos (p. ej. un grupo eliminado del repo)
     for file in $__fish_config_dir/abbr.d/*.fish
-        source $file
+        test -f $file; and source $file
     end
 end
 

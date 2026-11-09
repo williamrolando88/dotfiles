@@ -5,7 +5,7 @@ set -euo pipefail
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BREWFILE="$DOTFILES_DIR/Brewfile"
 OS="$(uname -s)"
-ALL_STEPS="kitty fish prompt links abbr agents shell tools"
+ALL_STEPS="kitty fish prompt links plugins abbr agents shell tools"
 
 usage() {
   cat <<EOF
@@ -18,7 +18,8 @@ existe y pregunta antes de instalar o cambiar algo.
   fish     Shell Fish
   prompt   Starship y FiraCode Nerd Font
   links    Symlinks de configuración (respalda archivos existentes)
-  abbr     Checklist de grupos de abreviaciones de fish (git, docker, ...)
+  plugins  Plugins de fish con fisher (fish/fish_plugins, p. ej. plugin-git)
+  abbr     Checklist de grupos de abreviaciones de fish (git-overrides, docker, ...)
   agents   AGENTS.md y MCP para Claude Code y Antigravity
   shell    Cambiar el login shell a fish (opcional, requiere sudo)
   tools    Checklist del Brewfile: instala lo marcado y desinstala lo desmarcado
@@ -464,6 +465,35 @@ step_default_shell() {
   chsh -s "$fish_path" && echo "  [OK] Login shell cambiado. Aplica en la próxima sesión."
 }
 
+# Plugins de fish gestionados con fisher. La lista vive en fish/fish_plugins (enlazada en
+# ~/.config/fish/fish_plugins), así `fisher install`/`fisher remove` actualizan el repo.
+step_plugins() {
+  step "Plugins de fish (fisher)"
+  if ! command -v fish >/dev/null 2>&1; then
+    echo "  fish no está instalado; omitiendo."
+    return
+  fi
+
+  if fish -c 'type -q fisher' 2>/dev/null; then
+    echo "  [=] fisher ya instalado"
+  elif require_brew && confirm "fisher no está instalado. ¿Instalarlo con Homebrew?"; then
+    brew_install fisher
+  else
+    echo "  fisher omitido."
+    return
+  fi
+
+  link_file "$DOTFILES_DIR/fish/fish_plugins" "$HOME/.config/fish/fish_plugins"
+
+  echo "  Plugins declarados:"
+  sed 's/^/    /' "$DOTFILES_DIR/fish/fish_plugins"
+  if confirm "¿Sincronizar con 'fisher update' (instala lo listado y quita lo que no esté)?"; then
+    fish -c 'fisher update' || echo "  [!] fisher update terminó con errores; revisa la salida anterior."
+  else
+    echo "  Sincronización omitida."
+  fi
+}
+
 # Checklist de grupos de abreviaciones (fish/abbr/*.fish). Habilitar un grupo lo enlaza en
 # ~/.config/fish/abbr.d/, que config.fish carga en sesiones interactivas. Que el programa
 # esté instalado es solo informativo: qué grupos se usan lo decide el usuario.
@@ -476,6 +506,15 @@ step_abbr() {
 
   local abbr_dir="$HOME/.config/fish/abbr.d"
   local names=() srcs=() programs=() counts=() enabled=() checked=() f name program
+
+  # Grupos que ya no existen en el repo: quita sus symlinks rotos (solo los que apuntan aquí)
+  for f in "$abbr_dir"/*.fish; do
+    if [ -L "$f" ] && [ ! -e "$f" ] && [[ "$(readlink "$f")" == "$DOTFILES_DIR/fish/abbr/"* ]]; then
+      rm "$f"
+      echo "  [~] Quitado grupo eliminado del repo: $(basename "$f" .fish)"
+    fi
+  done
+
   for f in "$DOTFILES_DIR"/fish/abbr/*.fish; do
     [ -f "$f" ] || continue
     name="$(basename "$f" .fish)"
@@ -596,6 +635,7 @@ run_step() {
     fish)   step_fish ;;
     prompt) step_prompt ;;
     links)  step_links ;;
+    plugins) step_plugins ;;
     abbr)   step_abbr ;;
     agents) step_agents ;;
     shell)  step_default_shell ;;
