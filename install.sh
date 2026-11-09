@@ -5,7 +5,7 @@ set -euo pipefail
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BREWFILE="$DOTFILES_DIR/Brewfile"
 OS="$(uname -s)"
-ALL_STEPS="kitty fish prompt links agents shell tools"
+ALL_STEPS="kitty fish prompt links abbr agents shell tools"
 
 usage() {
   cat <<EOF
@@ -18,6 +18,7 @@ existe y pregunta antes de instalar o cambiar algo.
   fish     Shell Fish
   prompt   Starship y FiraCode Nerd Font
   links    Symlinks de configuración (respalda archivos existentes)
+  abbr     Checklist de grupos de abreviaciones de fish (git, docker, ...)
   agents   AGENTS.md y MCP para Claude Code y Antigravity
   shell    Cambiar el login shell a fish (opcional, requiere sudo)
   tools    Checklist del Brewfile: instala lo marcado y desinstala lo desmarcado
@@ -111,6 +112,31 @@ link_file() {
   echo "  [OK] Enlazado: $dst -> $src"
 }
 
+# Invierte las posiciones indicadas ("2 4 6-8", base 1) en el array `checked` de la
+# función que la llama (bash usa scope dinámico, así funciona también en bash 3.2).
+toggle_checked() {
+  local answer="$1" total="$2" token start end n
+  for token in $answer; do
+    if [[ "$token" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+      start="${BASH_REMATCH[1]}"
+      end="${BASH_REMATCH[2]}"
+    elif [[ "$token" =~ ^[0-9]+$ ]]; then
+      start="$token"
+      end="$token"
+    else
+      echo "  [Aviso] Ignorando entrada no válida: $token"
+      continue
+    fi
+    for ((n = start; n <= end; n++)); do
+      if [ "$n" -lt 1 ] || [ "$n" -gt "$total" ]; then
+        echo "  [Aviso] Fuera de rango: $n"
+      else
+        checked[$((n - 1))]=$((1 - checked[n - 1]))
+      fi
+    done
+  done
+}
+
 # Checklist del Brewfile: cada paquete arranca marcado si está instalado. Al aplicar,
 # instala lo marcado que falta y desinstala lo desmarcado que está instalado. Nunca toca
 # paquetes que no estén en el Brewfile.
@@ -159,7 +185,7 @@ sync_brew_packages() {
     echo "  [Aviso] 'code' no está en el PATH: las extensiones de VS Code aparecen como no instaladas."
   fi
 
-  local answer token start end n mark change
+  local answer mark change
   while true; do
     echo ""
     printf "  %-4s %3s  %-7s %-34s %-15s %s\n" "" "#" "Tipo" "Paquete" "Cambio" "Descripción"
@@ -187,25 +213,7 @@ sync_brew_packages() {
       return
     fi
 
-    for token in $answer; do
-      if [[ "$token" =~ ^([0-9]+)-([0-9]+)$ ]]; then
-        start="${BASH_REMATCH[1]}"
-        end="${BASH_REMATCH[2]}"
-      elif [[ "$token" =~ ^[0-9]+$ ]]; then
-        start="$token"
-        end="$token"
-      else
-        echo "  [Aviso] Ignorando entrada no válida: $token"
-        continue
-      fi
-      for ((n = start; n <= end; n++)); do
-        if [ "$n" -lt 1 ] || [ "$n" -gt "${#names[@]}" ]; then
-          echo "  [Aviso] Fuera de rango: $n"
-        else
-          checked[$((n - 1))]=$((1 - checked[n - 1]))
-        fi
-      done
-    done
+    toggle_checked "$answer" "${#names[@]}"
   done
 
   local to_install=() to_remove=()
@@ -456,6 +464,122 @@ step_default_shell() {
   chsh -s "$fish_path" && echo "  [OK] Login shell cambiado. Aplica en la próxima sesión."
 }
 
+# Checklist de grupos de abreviaciones (fish/abbr/*.fish). Habilitar un grupo lo enlaza en
+# ~/.config/fish/abbr.d/, que config.fish carga en sesiones interactivas. Que el programa
+# esté instalado es solo informativo: qué grupos se usan lo decide el usuario.
+step_abbr() {
+  step "Abreviaciones de fish"
+  if [ ! -t 0 ]; then
+    echo "  Sesión no interactiva: omitiendo la checklist de abreviaciones."
+    return
+  fi
+
+  local abbr_dir="$HOME/.config/fish/abbr.d"
+  local names=() srcs=() programs=() counts=() enabled=() checked=() f name program
+  for f in "$DOTFILES_DIR"/fish/abbr/*.fish; do
+    [ -f "$f" ] || continue
+    name="$(basename "$f" .fish)"
+    program="$(sed -n 's/^# Programa:[[:space:]]*//p' "$f")"
+    names+=("$name")
+    srcs+=("$f")
+    programs+=("${program:--}")
+    counts+=("$(grep -c '^abbr ' "$f" || true)")
+    if [ -e "$abbr_dir/$name.fish" ] || [ -L "$abbr_dir/$name.fish" ]; then
+      enabled+=(1)
+    else
+      enabled+=(0)
+    fi
+  done
+
+  if [ "${#names[@]}" -eq 0 ]; then
+    echo "  No hay grupos en fish/abbr/."
+    return
+  fi
+
+  local i
+  for i in "${!names[@]}"; do
+    checked[$i]=${enabled[$i]}
+  done
+
+  local answer mark change installed
+  while true; do
+    echo ""
+    printf "  %-4s %3s  %-14s %-5s %-24s %s\n" "" "#" "Grupo" "Abbr" "Programa" "Cambio"
+    for i in "${!names[@]}"; do
+      [ "${checked[$i]}" -eq 1 ] && mark="[x]" || mark="[ ]"
+      if command -v "${programs[$i]}" >/dev/null 2>&1; then
+        installed="${programs[$i]} (instalado)"
+      else
+        installed="${programs[$i]} (no instalado)"
+      fi
+      change=""
+      if [ "${checked[$i]}" -eq 1 ] && [ "${enabled[$i]}" -eq 0 ]; then
+        change="+ habilitar"
+      elif [ "${checked[$i]}" -eq 0 ] && [ "${enabled[$i]}" -eq 1 ]; then
+        change="- deshabilitar"
+      fi
+      printf "  %-4s %3d  %-14s %-5s %-24s %s\n" "$mark" "$((i + 1))" "${names[$i]}" "${counts[$i]}" "$installed" "$change"
+    done
+
+    echo ""
+    echo "  [x] = grupo habilitado. Escribe números para marcar/desmarcar (ej: 1 3),"
+    echo "  Enter para continuar, o 'q' para salir sin cambios."
+    answer=""
+    read -r -p "  > " answer || true
+
+    if [ -z "$answer" ]; then
+      break
+    elif [ "$answer" = "q" ] || [ "$answer" = "Q" ]; then
+      echo "  Sin cambios."
+      return
+    fi
+    toggle_checked "$answer" "${#names[@]}"
+  done
+
+  local to_enable=() to_disable=()
+  for i in "${!names[@]}"; do
+    if [ "${checked[$i]}" -eq 1 ] && [ "${enabled[$i]}" -eq 0 ]; then
+      to_enable+=("$i")
+    elif [ "${checked[$i]}" -eq 0 ] && [ "${enabled[$i]}" -eq 1 ]; then
+      to_disable+=("$i")
+    fi
+  done
+
+  if [ "${#to_enable[@]}" -eq 0 ] && [ "${#to_disable[@]}" -eq 0 ]; then
+    echo "  Sin cambios: los grupos habilitados ya coinciden con la selección."
+    return
+  fi
+
+  echo ""
+  echo "  Plan:"
+  for i in ${to_enable[@]+"${to_enable[@]}"}; do
+    echo "    + ${names[$i]}"
+  done
+  for i in ${to_disable[@]+"${to_disable[@]}"}; do
+    echo "    - ${names[$i]}"
+  done
+  if ! confirm "¿Aplicar estos cambios?"; then
+    echo "  Sin cambios."
+    return
+  fi
+
+  local dst
+  for i in ${to_enable[@]+"${to_enable[@]}"}; do
+    link_file "${srcs[$i]}" "$abbr_dir/${names[$i]}.fish"
+  done
+  for i in ${to_disable[@]+"${to_disable[@]}"}; do
+    dst="$abbr_dir/${names[$i]}.fish"
+    # Solo se quitan symlinks creados por el instalador; un archivo propio no se toca
+    if [ -L "$dst" ] && [ "$(readlink "$dst")" = "${srcs[$i]}" ]; then
+      rm "$dst"
+      echo "  [OK] Deshabilitado: ${names[$i]}"
+    else
+      echo "  [!] $dst no es un symlink de este repo; no se modifica."
+    fi
+  done
+  echo "  Abre una nueva sesión de fish (o ejecuta 'exec fish') para aplicar los cambios."
+}
+
 step_tools() {
   step "Herramientas del Brewfile"
   require_brew || return 0
@@ -472,6 +596,7 @@ run_step() {
     fish)   step_fish ;;
     prompt) step_prompt ;;
     links)  step_links ;;
+    abbr)   step_abbr ;;
     agents) step_agents ;;
     shell)  step_default_shell ;;
     tools)  step_tools ;;
