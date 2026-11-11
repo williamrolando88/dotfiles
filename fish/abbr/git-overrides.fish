@@ -5,3 +5,4 @@
 # Para el resto se usan los del plugin (gcom, gcod, gdca, gp!, ...).
 abbr -a gmc 'git merge --continue'
 abbr -a grhs 'git reset --soft'
+abbr -a gp!! 'git push --force-with-lease --no-verify'
