@@ -24,9 +24,16 @@ if test -n "$brew_bin"
     $brew_bin shellenv fish | source
 end
 
-# Homebrew completions for fish
-if set -q HOMEBREW_PREFIX; and test -d "$HOMEBREW_PREFIX/share/fish/vendor_completions.d"
-    set -p fish_complete_path "$HOMEBREW_PREFIX/share/fish/vendor_completions.d"
+# Homebrew: vendor completions y functions (p. ej. fisher instalado vía brew)
+if set -q HOMEBREW_PREFIX
+    if test -d "$HOMEBREW_PREFIX/share/fish/vendor_completions.d"
+        and not contains -- "$HOMEBREW_PREFIX/share/fish/vendor_completions.d" $fish_complete_path
+        set -p fish_complete_path "$HOMEBREW_PREFIX/share/fish/vendor_completions.d"
+    end
+    if test -d "$HOMEBREW_PREFIX/share/fish/vendor_functions.d"
+        and not contains -- "$HOMEBREW_PREFIX/share/fish/vendor_functions.d" $fish_function_path
+        set -a fish_function_path "$HOMEBREW_PREFIX/share/fish/vendor_functions.d"
+    end
 end
 
 # Initialize Starship prompt

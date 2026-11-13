@@ -86,12 +86,12 @@ link_file() {
   mkdir -p "$(dirname "$dst")"
 
   if [ -L "$dst" ]; then
-    local current
-    current="$(readlink "$dst")"
-    if [ "$current" = "$src" ]; then
+    if [ "$dst" -ef "$src" ]; then
       echo "  [=] Ya enlazado: $dst"
       return
     fi
+    local current
+    current="$(readlink "$dst")"
     echo "  [~] Reemplazando symlink: $dst (apuntaba a $current)"
     rm "$dst"
   elif [ -e "$dst" ]; then
@@ -506,6 +506,9 @@ step_plugins() {
     return
   fi
 
+  # Asegura que config.fish esté enlazado para que fish cargue las rutas vendor de Homebrew
+  link_file "$DOTFILES_DIR/fish/config.fish" "$HOME/.config/fish/config.fish"
+
   if fish -c 'type -q fisher' 2>/dev/null; then
     echo "  [=] fisher ya instalado"
   elif require_brew && confirm "fisher no está instalado. ¿Instalarlo con Homebrew?"; then
@@ -641,7 +644,7 @@ step_abbr() {
   for i in ${to_disable[@]+"${to_disable[@]}"}; do
     dst="$abbr_dir/${names[$i]}.fish"
     # Solo se quitan symlinks creados por el instalador; un archivo propio no se toca
-    if [ -L "$dst" ] && [ "$(readlink "$dst")" = "${srcs[$i]}" ]; then
+    if [ -L "$dst" ] && { [ "$dst" -ef "${srcs[$i]}" ] || [ "$(readlink "$dst")" = "${srcs[$i]}" ]; }; then
       rm "$dst"
       echo "  [OK] Deshabilitado: ${names[$i]}"
     else
