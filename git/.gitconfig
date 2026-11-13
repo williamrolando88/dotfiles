@@ -5,14 +5,27 @@
 	defaultBranch = main
 [core]
 	editor = nano
-	pager =
+	pager = delta
 	autocrlf = input
+[interactive]
+	diffFilter = delta --color-only
+[delta]
+	navigate = true
+	dark = true
+	line-numbers = true
+[alias]
+	dft = -c diff.external=difft diff
+	dlog = -c diff.external=difft log -p --ext-diff
+[fetch]
+	prune = true
 [push]
 	autoSetupRemote = true
 [pull]
 	rebase = true
 [rebase]
 	updateRefs = true
+[rerere]
+	enabled = true
 # Ajustes propios de cada máquina (p. ej. identidad de trabajo), fuera del repo.
 # Va al final para que sus valores tengan prioridad; si el archivo no existe, se ignora.
 [include]

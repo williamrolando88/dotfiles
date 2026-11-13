@@ -11,7 +11,7 @@ dotfiles/
 ├── fish/
 │   ├── config.fish        # Homebrew, Starship, mise y carga de los grupos de abreviaciones habilitados
 │   ├── fish_plugins       # Plugins gestionados con fisher (plugin-git para las abreviaciones de git)
-│   └── abbr/              # Grupos de abreviaciones (git-overrides, docker, strata, antigravity)
+│   └── abbr/              # Grupos de abreviaciones (git-overrides, docker, strata, antigravity, web, eza)
 ├── kitty/
 │   ├── kitty.conf         # Tema Tokyo Night y FiraCode ligaduras (compartido)
 │   ├── macos.conf         # Atajos con cmd, Option como Alt, prefijos de Homebrew
