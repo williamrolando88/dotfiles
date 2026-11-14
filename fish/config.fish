@@ -41,6 +41,11 @@ if type -q starship
     starship init fish | source
 end
 
+# Initialize zoxide (smarter cd)
+if type -q zoxide
+    zoxide init fish | source
+end
+
 # Initialize mise-en-place
 if type -q mise
     if status is-interactive

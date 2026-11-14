@@ -37,6 +37,8 @@ brew "vultr-cli"
 brew "xh"
 # Process YAML, JSON, XML, CSV and properties documents from the CLI
 brew "yq"
+# Smarter cd command for faster navigation
+brew "zoxide"
 # jq for binary formats
 brew "wader/tap/fq", trusted: true
 vscode "github.vscode-pull-request-github"
