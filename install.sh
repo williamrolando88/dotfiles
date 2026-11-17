@@ -4,8 +4,9 @@ set -euo pipefail
 
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BREWFILE="$DOTFILES_DIR/Brewfile"
+BREWFILE_CORE="$DOTFILES_DIR/Brewfile.core"
 OS="$(uname -s)"
-ALL_STEPS="kitty fish prompt links plugins abbr agents shell tools"
+ALL_STEPS="core links plugins abbr agents shell tools"
 
 usage() {
   cat <<EOF
@@ -14,9 +15,8 @@ Uso: ./install.sh [paso ...]
 Sin argumentos ejecuta todos los pasos en orden. Cada paso detecta lo que ya
 existe y pregunta antes de instalar o cambiar algo.
 
-  kitty    Terminal Kitty
-  fish     Shell Fish
-  prompt   Starship y FiraCode Nerd Font
+  core     Lo que usan las configuraciones del repo (Brewfile.core): fish, kitty,
+           starship, FiraCode Nerd Font, fisher, delta, difftastic, mise, jq
   links    Symlinks de configuración (respalda archivos existentes)
   plugins  Plugins de fish con fisher (fish/fish_plugins, p. ej. plugin-git)
   abbr     Checklist de grupos de abreviaciones de fish (git-overrides, docker, ...)
@@ -69,9 +69,57 @@ require_brew() {
   fi
 }
 
-brew_install() {
-  echo "  Ejecutando: brew install $*"
-  brew install "$@" || echo "  [!] brew install $* terminó con errores; revisa la salida anterior."
+brew_list_installed() {
+  installed_formulae="$(brew list --formula -1 2>/dev/null || true)"
+  installed_casks="$(brew list --cask -1 2>/dev/null || true)"
+}
+
+# Lee un Brewfile y llena los arrays `kinds names descs lines taps` de la función que la
+# llama (scope dinámico, igual que toggle_checked). El comentario `#` sobre cada línea es
+# su descripción. Entradas con `if OS.linux?` / `if OS.mac?` solo se leen en ese SO.
+read_brewfile() {
+  local file="$1" desc="" raw kind pkg
+  while IFS= read -r raw || [ -n "$raw" ]; do
+    if [[ "$raw" =~ ^#[[:space:]]*(.*)$ ]]; then
+      desc="${BASH_REMATCH[1]}"
+    elif [[ "$raw" =~ ^tap[[:space:]] ]]; then
+      taps+=("$raw")
+    elif [[ "$raw" =~ ^(brew|cask|vscode)[[:space:]]+\"([^\"]+)\" ]]; then
+      kind="${BASH_REMATCH[1]}"
+      pkg="${BASH_REMATCH[2]}"
+      if { [[ "$raw" =~ if[[:space:]]+OS\.linux\? ]] && [ "$OS" != "Linux" ]; } ||
+         { [[ "$raw" =~ if[[:space:]]+OS\.mac\? ]] && [ "$OS" != "Darwin" ]; }; then
+        desc=""
+        continue
+      fi
+      kinds+=("$kind")
+      names+=("$pkg")
+      descs+=("$desc")
+      lines+=("$raw")
+      desc=""
+    fi
+  done < "$file"
+}
+
+# Instala con `brew bundle` solo las entradas indicadas (índices de los arrays que llenó
+# read_brewfile), más los taps que esas entradas necesitan.
+bundle_install() {
+  local tmp tap tap_name i
+  tmp="$(mktemp "${TMPDIR:-/tmp}/dotfiles-brewfile.XXXXXX")"
+  for tap in ${taps[@]+"${taps[@]}"}; do
+    tap_name="$(echo "$tap" | sed -E 's/^tap[[:space:]]+"([^"]+)".*/\1/')"
+    for i in "$@"; do
+      if [[ "${names[$i]}" == "$tap_name/"* ]]; then
+        echo "$tap" >> "$tmp"
+        break
+      fi
+    done
+  done
+  for i in "$@"; do
+    echo "${lines[$i]}" >> "$tmp"
+  done
+  brew bundle --file="$tmp" || echo "  [!] brew bundle terminó con errores; revisa la salida anterior."
+  rm -f "$tmp"
 }
 
 # Enlaza src -> dst sin perder datos:
@@ -142,29 +190,8 @@ toggle_checked() {
 # instala lo marcado que falta y desinstala lo desmarcado que está instalado. Nunca toca
 # paquetes que no estén en el Brewfile.
 sync_brew_packages() {
-  local kinds=() names=() descs=() lines=() taps=() desc="" raw kind pkg
-
-  while IFS= read -r raw || [ -n "$raw" ]; do
-    if [[ "$raw" =~ ^#[[:space:]]*(.*)$ ]]; then
-      desc="${BASH_REMATCH[1]}"
-    elif [[ "$raw" =~ ^tap[[:space:]] ]]; then
-      taps+=("$raw")
-    elif [[ "$raw" =~ ^(brew|cask|vscode)[[:space:]]+\"([^\"]+)\" ]]; then
-      kind="${BASH_REMATCH[1]}"
-      pkg="${BASH_REMATCH[2]}"
-      # Entradas condicionadas al SO (`if OS.linux?` / `if OS.mac?`) solo se listan en ese SO
-      if { [[ "$raw" =~ if[[:space:]]+OS\.linux\? ]] && [ "$OS" != "Linux" ]; } ||
-         { [[ "$raw" =~ if[[:space:]]+OS\.mac\? ]] && [ "$OS" != "Darwin" ]; }; then
-        desc=""
-        continue
-      fi
-      kinds+=("$kind")
-      names+=("$pkg")
-      descs+=("$desc")
-      lines+=("$raw")
-      desc=""
-    fi
-  done < "$BREWFILE"
+  local kinds=() names=() descs=() lines=() taps=()
+  read_brewfile "$BREWFILE"
 
   if [ "${#names[@]}" -eq 0 ]; then
     echo "  El Brewfile no tiene paquetes."
@@ -172,8 +199,7 @@ sync_brew_packages() {
   fi
 
   local installed_formulae installed_casks installed_ext="" has_code=0
-  installed_formulae="$(brew list --formula -1 2>/dev/null || true)"
-  installed_casks="$(brew list --cask -1 2>/dev/null || true)"
+  brew_list_installed
   if command -v code >/dev/null 2>&1; then
     has_code=1
     installed_ext="$(code --list-extensions 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)"
@@ -253,25 +279,9 @@ sync_brew_packages() {
   fi
 
   if [ "${#to_install[@]}" -gt 0 ]; then
-    # Brewfile temporal solo con lo que falta (y los taps que esos paquetes necesitan)
-    local tmp tap tap_name
-    tmp="$(mktemp "${TMPDIR:-/tmp}/dotfiles-brewfile.XXXXXX")"
-    for tap in ${taps[@]+"${taps[@]}"}; do
-      tap_name="$(echo "$tap" | sed -E 's/^tap[[:space:]]+"([^"]+)".*/\1/')"
-      for i in "${to_install[@]}"; do
-        if [[ "${names[$i]}" == "$tap_name/"* ]]; then
-          echo "$tap" >> "$tmp"
-          break
-        fi
-      done
-    done
-    for i in "${to_install[@]}"; do
-      echo "${lines[$i]}" >> "$tmp"
-    done
     echo ""
     echo "==> Instalando"
-    brew bundle --file="$tmp" || echo "  [!] brew bundle terminó con errores; revisa la salida anterior."
-    rm -f "$tmp"
+    bundle_install "${to_install[@]}"
   fi
 
   if [ "${#to_remove[@]}" -gt 0 ]; then
@@ -323,51 +333,89 @@ current_login_shell() {
   fi
 }
 
-step_kitty() {
-  step "Kitty (terminal)"
-  local bin
-  if bin="$(find_kitty)"; then
-    echo "  [=] Ya instalado: $("$bin" --version) ($bin)"
-    return
-  fi
-  require_brew || return 0
-  if confirm "Kitty no está instalado. ¿Instalarlo con Homebrew (cask)?"; then
-    brew_install --cask kitty
-  else
-    echo "  Omitido."
-  fi
+# Detecta una entrada del núcleo instalada fuera de Homebrew (app de kitty descargada,
+# fuente copiada a mano, fish del sistema, jq de macOS en /usr/bin) para no duplicarla.
+core_present_elsewhere() {
+  case "$1" in
+    kitty)                    find_kitty >/dev/null ;;
+    font-fira-code-nerd-font) font_installed ;;
+    fisher)                   command -v fish >/dev/null 2>&1 && fish -c 'type -q fisher' 2>/dev/null ;;
+    git-delta)                command -v delta >/dev/null 2>&1 ;;
+    difftastic)               command -v difft >/dev/null 2>&1 ;;
+    *)                        command -v "$1" >/dev/null 2>&1 ;;
+  esac
 }
 
-step_fish() {
-  step "Fish (shell)"
-  if command -v fish >/dev/null 2>&1; then
-    echo "  [=] Ya instalado: $(fish --version) ($(command -v fish))"
+# En Linux el cask de kitty no aplica: se usa el instalador oficial, que lo deja en
+# ~/.local/kitty.app (find_kitty lo detecta ahí), más los enlaces y el .desktop que
+# indica su documentación.
+install_kitty_linux() {
+  local apps="$HOME/.local/share/applications"
+  curl -fsSL https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin launch=n || {
+    echo "  [!] El instalador de kitty terminó con errores; revisa la salida anterior."
     return
-  fi
-  require_brew || return 0
-  if confirm "Fish no está instalado. ¿Instalarlo con Homebrew?"; then
-    brew_install fish
-  else
-    echo "  Omitido."
-  fi
+  }
+  mkdir -p "$HOME/.local/bin" "$apps"
+  ln -sf "$HOME/.local/kitty.app/bin/kitty" "$HOME/.local/kitty.app/bin/kitten" "$HOME/.local/bin/"
+  cp "$HOME/.local/kitty.app/share/applications/kitty.desktop" \
+     "$HOME/.local/kitty.app/share/applications/kitty-open.desktop" "$apps/"
+  sed -i "s|Icon=kitty|Icon=$HOME/.local/kitty.app/share/icons/hicolor/256x256/apps/kitty.png|g" "$apps"/kitty*.desktop
+  sed -i "s|Exec=kitty|Exec=$HOME/.local/kitty.app/bin/kitty|g" "$apps"/kitty*.desktop
+  echo "  [OK] kitty instalado en ~/.local/kitty.app"
 }
 
-step_prompt() {
-  step "Starship y FiraCode Nerd Font"
-  if command -v starship >/dev/null 2>&1; then
-    echo "  [=] Starship ya instalado: $(starship --version | head -1)"
-  elif require_brew && confirm "Starship no está instalado. ¿Instalarlo con Homebrew?"; then
-    brew_install starship
-  else
-    echo "  Starship omitido."
+# Núcleo (Brewfile.core): no es una checklist. Muestra lo que falta y lo instala tras una
+# sola confirmación. Nunca desinstala.
+step_core() {
+  step "Núcleo (Brewfile.core)"
+  require_brew || return 0
+
+  local kinds=() names=() descs=() lines=() taps=()
+  read_brewfile "$BREWFILE_CORE"
+
+  local installed_formulae installed_casks
+  brew_list_installed
+
+  local i short missing=()
+  for i in "${!names[@]}"; do
+    short="${names[$i]##*/}"
+    if { [ "${kinds[$i]}" = "brew" ] && grep -qxF "$short" <<< "$installed_formulae"; } ||
+       { [ "${kinds[$i]}" = "cask" ] && grep -qxF "$short" <<< "$installed_casks"; } ||
+       core_present_elsewhere "$short"; then
+      echo "  [=] ${names[$i]}"
+    else
+      missing+=("$i")
+    fi
+  done
+
+  local kitty_missing=0
+  if [ "$OS" = "Linux" ] && ! find_kitty >/dev/null; then
+    kitty_missing=1
   fi
 
-  if font_installed; then
-    echo "  [=] FiraCode Nerd Font ya instalada"
-  elif require_brew && confirm "FiraCode Nerd Font no está instalada. ¿Instalarla con Homebrew (cask)?"; then
-    brew_install --cask font-fira-code-nerd-font
-  else
-    echo "  Fuente omitida."
+  if [ "${#missing[@]}" -eq 0 ] && [ "$kitty_missing" -eq 0 ]; then
+    echo "  Todo el núcleo está instalado."
+    return
+  fi
+
+  echo ""
+  echo "  Falta:"
+  for i in ${missing[@]+"${missing[@]}"}; do
+    printf "    + %-26s %s\n" "${names[$i]}" "${descs[$i]}"
+  done
+  if [ "$kitty_missing" -eq 1 ]; then
+    printf "    + %-26s %s\n" "kitty" "Terminal (instalador oficial de kitty)"
+  fi
+  if ! confirm "¿Instalar lo que falta?"; then
+    echo "  Omitido. Las configuraciones del repo pueden fallar sin estas herramientas."
+    return
+  fi
+
+  if [ "${#missing[@]}" -gt 0 ]; then
+    bundle_install "${missing[@]}"
+  fi
+  if [ "$kitty_missing" -eq 1 ]; then
+    install_kitty_linux
   fi
 }
 
@@ -412,7 +460,7 @@ setup_claude_code() {
   fi
 
   if ! command -v jq >/dev/null 2>&1; then
-    echo "  [!] jq no está instalado; omitiendo el registro de servidores MCP."
+    echo "  [!] jq no está instalado (ejecuta ./install.sh core); omitiendo el registro de servidores MCP."
     return
   fi
   local name server wanted current
@@ -445,14 +493,6 @@ setup_claude_code() {
 
 step_agents() {
   step "Agentes de IA (Claude Code y Antigravity)"
-
-  # jq es requerido: lo usa este paso (mcp.json) y los agentes lo dan por disponible.
-  # macOS lo trae en /usr/bin; en Linux puede faltar.
-  if command -v jq >/dev/null 2>&1; then
-    echo "  [=] jq disponible: $(jq --version)"
-  elif require_brew && confirm "jq es requerido y no está instalado. ¿Instalarlo con Homebrew?"; then
-    brew_install jq
-  fi
 
   # Fuente única: ~/.agents enlaza a los archivos del repo
   link_file "$DOTFILES_DIR/agents/AGENTS.md" "$HOME/.agents/AGENTS.md"
@@ -509,12 +549,8 @@ step_plugins() {
   # Asegura que config.fish esté enlazado para que fish cargue las rutas vendor de Homebrew
   link_file "$DOTFILES_DIR/fish/config.fish" "$HOME/.config/fish/config.fish"
 
-  if fish -c 'type -q fisher' 2>/dev/null; then
-    echo "  [=] fisher ya instalado"
-  elif require_brew && confirm "fisher no está instalado. ¿Instalarlo con Homebrew?"; then
-    brew_install fisher
-  else
-    echo "  fisher omitido."
+  if ! fish -c 'type -q fisher' 2>/dev/null; then
+    echo "  [!] fisher no está instalado (ejecuta ./install.sh core); omitiendo."
     return
   fi
 
@@ -666,9 +702,7 @@ step_tools() {
 
 run_step() {
   case "$1" in
-    kitty)  step_kitty ;;
-    fish)   step_fish ;;
-    prompt) step_prompt ;;
+    core)   step_core ;;
     links)  step_links ;;
     plugins) step_plugins ;;
     abbr)   step_abbr ;;

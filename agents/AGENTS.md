@@ -18,7 +18,7 @@
 
 ## Available Modern CLI Tooling (Prefer Over Legacy Tools)
 
-The following tools are optional: the dotfiles installer lets the user pick them from the Brewfile, so a given machine (macOS or Linux, via Homebrew) may not have all of them. Check with `command -v <tool>` before relying on one, prefer it when present, and fall back to the standard tool when it is missing:
+`jq`, `difftastic` (`difft`), `git-delta` and `mise` are always installed (dotfiles `Brewfile.core`). The rest are optional: the dotfiles installer lets the user pick them from the Brewfile, so a given machine (macOS or Linux, via Homebrew) may not have all of them. Check with `command -v <tool>` before relying on an optional one, prefer it when present, and fall back to the standard tool when it is missing:
 - **AST Search & Refactoring**: `ast-grep` (binary `ast-grep`), `difftastic` (binary `difft`). Prioritize `ast-grep` for syntax-aware code searches and AST replacements in TypeScript/JS/Python over brittle regex, and `difft` for structural AST diffs.
 - **Fast Search & Traversal**: `ripgrep` (`rg`), `fd`. Use `rg` (with `--json` when structured data is helpful) over `grep`, and `fd` over `find`.
 - **Structured Data & Configs**:

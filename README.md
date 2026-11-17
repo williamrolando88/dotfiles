@@ -23,6 +23,7 @@ dotfiles/
 ├── agents/
 │   ├── AGENTS.md          # Instrucciones compartidas para Claude Code y Antigravity
 │   └── mcp.json           # Servidores MCP globales (Playwright, etc.)
+├── Brewfile.core          # Núcleo: lo que usan las configuraciones del repo (siempre)
 ├── Brewfile               # Herramientas CLI opcionales (selección interactiva)
 ├── install.sh             # Script de instalación idempotente con symlinks
 └── README.md
@@ -46,21 +47,20 @@ ya existe antes de preguntar si instalar o cambiar algo:
 
 | Paso     | Qué hace |
 |----------|----------|
-| `kitty`  | Detecta Kitty (PATH o app ya instalada) o lo instala con `brew install --cask kitty` |
-| `fish`   | Detecta Fish o lo instala con `brew install fish` |
-| `prompt` | Starship y FiraCode Nerd Font |
+| `core`   | Instala lo que falte de `Brewfile.core` con una sola confirmación: fish, fisher, starship, kitty, FiraCode Nerd Font, delta, difftastic, mise y jq. Detecta también lo instalado fuera de Homebrew (app de kitty, fuente, jq del sistema). En Linux, kitty se instala con su instalador oficial en `~/.local/kitty.app`. Nunca desinstala |
 | `links`  | Symlinks a `~/.config` y `~/.gitconfig`. Si ya existe un archivo distinto, lo respalda como `<archivo>.bak.<timestamp>` |
-| `plugins` | Instala fisher (Homebrew), enlaza `fish/fish_plugins` y sincroniza con `fisher update`. Las abreviaciones de git vienen de `jhillyerd/plugin-git` |
+| `plugins` | Enlaza `fish/fish_plugins` y sincroniza con `fisher update`. Las abreviaciones de git vienen de `jhillyerd/plugin-git` |
 | `abbr`   | Checklist de los grupos de `fish/abbr/`: muestra si el programa está instalado (solo informativo) y enlaza los grupos marcados en `~/.config/fish/abbr.d/`, que `config.fish` carga. Los desmarcados se quitan; un archivo propio en esa carpeta no se toca |
 | `agents` | Enlaza `agents/` en `~/.agents`. Antigravity: symlinks en `~/.gemini/config`. Claude Code: agrega `@~/.agents/AGENTS.md` a `~/.claude/CLAUDE.md` y registra los servidores de `mcp.json` con `claude mcp add-json --scope user`, o los actualiza si su comando difiere del repo (p. ej. al cambiar una versión fijada) |
 | `shell`  | Opcional: agrega fish a `/etc/shells` y lo deja como login shell (`chsh`). Kitty abre fish aunque se omita |
 | `tools`  | Checklist del Brewfile: cada paquete aparece marcado si está instalado. Al aplicar, instala lo marcado que falta y desinstala lo desmarcado, previa confirmación. Solo afecta paquetes del Brewfile |
 
-Para agregar o quitar herramientas de la lista, edita el `Brewfile`: el comentario `#` sobre
-cada línea es la descripción que aparece en la checklist. Una línea con `if OS.linux?` o
-`if OS.mac?` al final solo aparece en ese sistema operativo.
+¿`Brewfile.core` o `Brewfile`? Si algún archivo del repo usa la herramienta sin comprobar
+que exista (p. ej. `delta` como pager en `.gitconfig`), va en `Brewfile.core`; si no, es
+opcional y va en `Brewfile`. En ambos, el comentario `#` sobre cada línea es su descripción,
+y una línea con `if OS.linux?` o `if OS.mac?` al final solo se usa en ese sistema operativo.
 
-Se puede ejecutar un paso suelto, por ejemplo `./install.sh links` o `./install.sh kitty fish`.
+Se puede ejecutar un paso suelto, por ejemplo `./install.sh links` o `./install.sh core tools`.
 Ejecutarlo de nuevo es seguro: lo que ya está instalado o enlazado se omite.
 
 Kitty carga `macos.conf` o `linux.conf` automáticamente mediante `include ${KITTY_OS}.conf`.

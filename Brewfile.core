@@ -1,0 +1,24 @@
+# Núcleo: lo que las configuraciones del repo usan directamente. `./install.sh core` lo
+# instala siempre (salvo lo que ya exista, aunque sea fuera de Homebrew) y no aparece en
+# la checklist de `tools`. Herramientas opcionales: Brewfile.
+#
+# Regla: si un archivo del repo lo usa sin comprobar que exista, va aquí.
+
+# Shell (fish/config.fish)
+brew "fish"
+# Gestor de plugins de fish (fish/fish_plugins)
+brew "fisher"
+# Prompt (starship/starship.toml)
+brew "starship"
+# Terminal (kitty/). En Linux se usa el instalador oficial de kitty
+cask "kitty" if OS.mac?
+# Fuente de kitty/kitty.conf
+cask "font-fira-code-nerd-font"
+# Pager de git (git/.gitconfig: core.pager, interactive.diffFilter)
+brew "git-delta"
+# Diff estructural de git (git/.gitconfig: alias dft y dlog)
+brew "difftastic"
+# Runtimes de lenguajes; Node da npx a los servidores MCP (agents/mcp.json)
+brew "mise"
+# Lo usa el paso agents para registrar agents/mcp.json
+brew "jq"
