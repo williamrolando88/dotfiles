@@ -5,8 +5,9 @@ set -euo pipefail
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BREWFILE="$DOTFILES_DIR/Brewfile"
 BREWFILE_CORE="$DOTFILES_DIR/Brewfile.core"
+ABBR_DIR="$HOME/.config/fish/abbr.d"
 OS="$(uname -s)"
-ALL_STEPS="core links plugins abbr agents shell tools"
+ALL_STEPS="core links plugins tools abbr agents shell"
 
 usage() {
   cat <<EOF
@@ -19,10 +20,10 @@ existe y pregunta antes de instalar o cambiar algo.
            starship, FiraCode Nerd Font, fisher, delta, difftastic, mise, jq
   links    Symlinks de configuración (respalda archivos existentes)
   plugins  Plugins de fish con fisher (fish/fish_plugins, p. ej. plugin-git)
+  tools    Checklist del Brewfile: instala lo marcado y desinstala lo desmarcado
   abbr     Checklist de grupos de abreviaciones de fish (git-overrides, docker, ...)
   agents   AGENTS.md y MCP para Claude Code y Antigravity
   shell    Cambiar el login shell a fish (opcional, requiere sudo)
-  tools    Checklist del Brewfile: instala lo marcado y desinstala lo desmarcado
 EOF
 }
 
@@ -295,6 +296,8 @@ sync_brew_packages() {
       esac || echo "  [!] No se pudo desinstalar ${names[$i]} (¿otro paquete depende de él?)"
     done
   fi
+
+  offer_abbr_groups ${to_install[@]+"${to_install[@]}"} -- ${to_remove[@]+"${to_remove[@]}"}
 }
 
 # Kitty puede estar instalado fuera de Homebrew (app descargada, instalador oficial),
@@ -565,9 +568,73 @@ step_plugins() {
   fi
 }
 
-# Checklist de grupos de abreviaciones (fish/abbr/*.fish). Habilitar un grupo lo enlaza en
-# ~/.config/fish/abbr.d/, que config.fish carga en sesiones interactivas. Que el programa
-# esté instalado es solo informativo: qué grupos se usan lo decide el usuario.
+# Grupos de abreviaciones (fish/abbr/*.fish): habilitar uno lo enlaza en ABBR_DIR, que
+# config.fish carga en sesiones interactivas.
+abbr_enabled() {
+  [ -e "$ABBR_DIR/$1.fish" ] || [ -L "$ABBR_DIR/$1.fish" ]
+}
+
+abbr_enable() {
+  link_file "$DOTFILES_DIR/fish/abbr/$1.fish" "$ABBR_DIR/$1.fish"
+}
+
+# Solo se quitan symlinks creados por el instalador; un archivo propio no se toca
+abbr_disable() {
+  local src="$DOTFILES_DIR/fish/abbr/$1.fish" dst="$ABBR_DIR/$1.fish"
+  if [ -L "$dst" ] && { [ "$dst" -ef "$src" ] || [ "$(readlink "$dst")" = "$src" ]; }; then
+    rm "$dst"
+    echo "  [OK] Deshabilitado: $1"
+  else
+    echo "  [!] $dst no es un symlink de este repo; no se modifica."
+  fi
+}
+
+# Grupos cuyo `# Programa:` coincide con $1 (p. ej. eza -> eza)
+abbr_groups_for() {
+  local f
+  for f in "$DOTFILES_DIR"/fish/abbr/*.fish; do
+    [ -f "$f" ] || continue
+    if [ "$(sed -n 's/^# Programa:[[:space:]]*//p' "$f")" = "$1" ]; then
+      basename "$f" .fish
+    fi
+  done
+}
+
+# Tras instalar o desinstalar paquetes con `tools`, ofrece habilitar o deshabilitar el
+# grupo de abreviaciones de cada uno (el que declara `# Programa: <paquete>`). Usa los
+# arrays `names` de sync_brew_packages; recibe los índices de cada lista separados por --.
+offer_abbr_groups() {
+  local i group mode=enable changed=0
+  for i in "$@"; do
+    if [ "$i" = "--" ]; then
+      mode=disable
+      continue
+    fi
+    for group in $(abbr_groups_for "${names[$i]##*/}"); do
+      if [ "$mode" = "enable" ]; then
+        abbr_enabled "$group" && continue
+        command -v "${names[$i]##*/}" >/dev/null 2>&1 || continue
+        if confirm "${names[$i]} tiene abreviaciones de fish (grupo '$group'). ¿Habilitarlas?"; then
+          abbr_enable "$group"
+          changed=1
+        fi
+      else
+        abbr_enabled "$group" || continue
+        command -v "${names[$i]##*/}" >/dev/null 2>&1 && continue
+        if confirm "${names[$i]} se desinstaló. ¿Deshabilitar sus abreviaciones (grupo '$group')?"; then
+          abbr_disable "$group"
+          changed=1
+        fi
+      fi
+    done
+  done
+  if [ "$changed" -eq 1 ]; then
+    echo "  Abre una nueva sesión de fish (o ejecuta 'exec fish') para aplicar los cambios."
+  fi
+}
+
+# Checklist de grupos de abreviaciones. Que el programa esté instalado es solo informativo:
+# qué grupos se usan lo decide el usuario (`tools` además los ofrece al instalar).
 step_abbr() {
   step "Abreviaciones de fish"
   if [ ! -t 0 ]; then
@@ -575,11 +642,10 @@ step_abbr() {
     return
   fi
 
-  local abbr_dir="$HOME/.config/fish/abbr.d"
-  local names=() srcs=() programs=() counts=() enabled=() checked=() f name program
+  local names=() programs=() counts=() enabled=() checked=() f name program
 
   # Grupos que ya no existen en el repo: quita sus symlinks rotos (solo los que apuntan aquí)
-  for f in "$abbr_dir"/*.fish; do
+  for f in "$ABBR_DIR"/*.fish; do
     if [ -L "$f" ] && [ ! -e "$f" ] && [[ "$(readlink "$f")" == "$DOTFILES_DIR/fish/abbr/"* ]]; then
       rm "$f"
       echo "  [~] Quitado grupo eliminado del repo: $(basename "$f" .fish)"
@@ -591,10 +657,9 @@ step_abbr() {
     name="$(basename "$f" .fish)"
     program="$(sed -n 's/^# Programa:[[:space:]]*//p' "$f")"
     names+=("$name")
-    srcs+=("$f")
     programs+=("${program:--}")
     counts+=("$(grep -c '^abbr ' "$f" || true)")
-    if [ -e "$abbr_dir/$name.fish" ] || [ -L "$abbr_dir/$name.fish" ]; then
+    if abbr_enabled "$name"; then
       enabled+=(1)
     else
       enabled+=(0)
@@ -673,19 +738,11 @@ step_abbr() {
     return
   fi
 
-  local dst
   for i in ${to_enable[@]+"${to_enable[@]}"}; do
-    link_file "${srcs[$i]}" "$abbr_dir/${names[$i]}.fish"
+    abbr_enable "${names[$i]}"
   done
   for i in ${to_disable[@]+"${to_disable[@]}"}; do
-    dst="$abbr_dir/${names[$i]}.fish"
-    # Solo se quitan symlinks creados por el instalador; un archivo propio no se toca
-    if [ -L "$dst" ] && { [ "$dst" -ef "${srcs[$i]}" ] || [ "$(readlink "$dst")" = "${srcs[$i]}" ]; }; then
-      rm "$dst"
-      echo "  [OK] Deshabilitado: ${names[$i]}"
-    else
-      echo "  [!] $dst no es un symlink de este repo; no se modifica."
-    fi
+    abbr_disable "${names[$i]}"
   done
   echo "  Abre una nueva sesión de fish (o ejecuta 'exec fish') para aplicar los cambios."
 }
@@ -705,10 +762,10 @@ run_step() {
     core)   step_core ;;
     links)  step_links ;;
     plugins) step_plugins ;;
+    tools)  step_tools ;;
     abbr)   step_abbr ;;
     agents) step_agents ;;
     shell)  step_default_shell ;;
-    tools)  step_tools ;;
   esac
 }
 

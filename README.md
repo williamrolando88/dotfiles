@@ -50,10 +50,10 @@ ya existe antes de preguntar si instalar o cambiar algo:
 | `core`   | Instala lo que falte de `Brewfile.core` con una sola confirmación: fish, fisher, starship, kitty, FiraCode Nerd Font, delta, difftastic, mise y jq. Detecta también lo instalado fuera de Homebrew (app de kitty, fuente, jq del sistema). En Linux, kitty se instala con su instalador oficial en `~/.local/kitty.app`. Nunca desinstala |
 | `links`  | Symlinks a `~/.config` y `~/.gitconfig`. Si ya existe un archivo distinto, lo respalda como `<archivo>.bak.<timestamp>` |
 | `plugins` | Enlaza `fish/fish_plugins` y sincroniza con `fisher update`. Las abreviaciones de git vienen de `jhillyerd/plugin-git` |
+| `tools`  | Checklist del Brewfile: cada paquete aparece marcado si está instalado. Al aplicar, instala lo marcado que falta y desinstala lo desmarcado, previa confirmación. Solo afecta paquetes del Brewfile. Si un paquete tiene un grupo en `fish/abbr/` (su `# Programa:` coincide con el nombre del paquete, p. ej. `eza`), ofrece habilitarlo al instalarlo y deshabilitarlo al desinstalarlo |
 | `abbr`   | Checklist de los grupos de `fish/abbr/`: muestra si el programa está instalado (solo informativo) y enlaza los grupos marcados en `~/.config/fish/abbr.d/`, que `config.fish` carga. Los desmarcados se quitan; un archivo propio en esa carpeta no se toca |
 | `agents` | Enlaza `agents/` en `~/.agents`. Antigravity: symlinks en `~/.gemini/config`. Claude Code: agrega `@~/.agents/AGENTS.md` a `~/.claude/CLAUDE.md` y registra los servidores de `mcp.json` con `claude mcp add-json --scope user`, o los actualiza si su comando difiere del repo (p. ej. al cambiar una versión fijada) |
 | `shell`  | Opcional: agrega fish a `/etc/shells` y lo deja como login shell (`chsh`). Kitty abre fish aunque se omita |
-| `tools`  | Checklist del Brewfile: cada paquete aparece marcado si está instalado. Al aplicar, instala lo marcado que falta y desinstala lo desmarcado, previa confirmación. Solo afecta paquetes del Brewfile |
 
 ¿`Brewfile.core` o `Brewfile`? Si algún archivo del repo usa la herramienta sin comprobar
 que exista (p. ej. `delta` como pager en `.gitconfig`), va en `Brewfile.core`; si no, es
