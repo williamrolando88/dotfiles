@@ -494,22 +494,51 @@ setup_claude_code() {
   done
 }
 
-step_agents() {
-  step "Agentes de IA (Claude Code y Antigravity)"
+# Enlaza cada skill de agents/skills/ como $1/<skill>. Se enlaza carpeta por carpeta (no el
+# directorio entero) para que convivan con skills instaladas a mano en el mismo lugar.
+link_skills() {
+  local dir="$1" src dst f
+  # Skills que ya no existen en el repo: quita sus symlinks rotos (solo los que apuntan aquí)
+  for f in "$dir"/*; do
+    if [ -L "$f" ] && [ ! -e "$f" ] && [[ "$(readlink "$f")" == "$DOTFILES_DIR/agents/skills/"* ]]; then
+      rm "$f"
+      echo "  [~] Quitada skill eliminada del repo: $(basename "$f")"
+    fi
+  done
+  for src in "$DOTFILES_DIR"/agents/skills/*/; do
+    [ -d "$src" ] || continue
+    src="${src%/}"
+    dst="$dir/$(basename "$src")"
+    # Una skill propia con el mismo nombre no se respalda: el agente cargaría también la
+    # copia .bak (sigue teniendo SKILL.md) y habría dos skills con el mismo nombre
+    if [ -e "$dst" ] && [ ! -L "$dst" ]; then
+      echo "  [!] $dst existe y no es de este repo; no se modifica."
+      continue
+    fi
+    link_file "$src" "$dst"
+  done
+}
 
-  # Fuente única: ~/.agents enlaza a los archivos del repo
+step_agents() {
+  step "Agentes de IA (Claude Code, Antigravity y pi)"
+
+  # Fuente única: ~/.agents enlaza a los archivos del repo. pi lee las skills de ~/.agents/skills
   link_file "$DOTFILES_DIR/agents/AGENTS.md" "$HOME/.agents/AGENTS.md"
   link_file "$DOTFILES_DIR/agents/mcp.json" "$HOME/.agents/mcp.json"
+  link_skills "$HOME/.agents/skills"
 
-  # Antigravity lee GEMINI.md y mcp_config.json (mismo formato mcpServers) desde ~/.gemini/config
+  # Antigravity CLI lee GEMINI.md y mcp_config.json (mismo formato mcpServers) desde
+  # ~/.gemini/config, y las skills globales desde ~/.gemini/skills
   if command -v agy >/dev/null 2>&1 || [ -d "$HOME/.gemini" ]; then
     link_file "$HOME/.agents/AGENTS.md" "$HOME/.gemini/config/GEMINI.md"
     link_file "$HOME/.agents/mcp.json" "$HOME/.gemini/config/mcp_config.json"
+    link_skills "$HOME/.gemini/skills"
   else
     echo "  Antigravity no detectado; omitiendo."
   fi
 
   if command -v claude >/dev/null 2>&1; then
+    link_skills "$HOME/.claude/skills"
     setup_claude_code
   else
     echo "  Claude Code no detectado; omitiendo."

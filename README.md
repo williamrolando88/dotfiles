@@ -22,7 +22,8 @@ dotfiles/
 │   └── .gitconfig         # Identidad Git y configuración estándar (rebase = true, main)
 ├── agents/
 │   ├── AGENTS.md          # Instrucciones compartidas para Claude Code y Antigravity
-│   └── mcp.json           # Servidores MCP globales (Playwright, etc.)
+│   ├── mcp.json           # Servidores MCP globales (Playwright, etc.)
+│   └── skills/            # Skills compartidas (ponytail, caveman); origen en UPSTREAM.md
 ├── Brewfile.core          # Núcleo: lo que usan las configuraciones del repo (siempre)
 ├── Brewfile               # Herramientas CLI opcionales (selección interactiva)
 ├── install.sh             # Script de instalación idempotente con symlinks
@@ -52,7 +53,7 @@ ya existe antes de preguntar si instalar o cambiar algo:
 | `plugins` | Enlaza `fish/fish_plugins` y sincroniza con `fisher update`. Las abreviaciones de git vienen de `jhillyerd/plugin-git` |
 | `tools`  | Checklist del Brewfile: cada paquete aparece marcado si está instalado. Al aplicar, instala lo marcado que falta y desinstala lo desmarcado, previa confirmación. Solo afecta paquetes del Brewfile. Si un paquete tiene un grupo en `fish/abbr/` (su `# Programa:` coincide con el nombre del paquete, p. ej. `eza`), ofrece habilitarlo al instalarlo y deshabilitarlo al desinstalarlo |
 | `abbr`   | Checklist de los grupos de `fish/abbr/`: muestra si el programa está instalado (solo informativo) y enlaza los grupos marcados en `~/.config/fish/abbr.d/`, que `config.fish` carga. Los desmarcados se quitan; un archivo propio en esa carpeta no se toca |
-| `agents` | Enlaza `agents/` en `~/.agents`. Antigravity: symlinks en `~/.gemini/config`. Claude Code: agrega `@~/.agents/AGENTS.md` a `~/.claude/CLAUDE.md` y registra los servidores de `mcp.json` con `claude mcp add-json --scope user`, o los actualiza si su comando difiere del repo (p. ej. al cambiar una versión fijada) |
+| `agents` | Enlaza `agents/` en `~/.agents` y cada skill de `agents/skills/` en `~/.agents/skills` (pi), `~/.claude/skills` y `~/.gemini/skills`, sin tocar skills instaladas a mano. Antigravity CLI: symlinks en `~/.gemini/config`. Claude Code: agrega `@~/.agents/AGENTS.md` a `~/.claude/CLAUDE.md` y registra los servidores de `mcp.json` con `claude mcp add-json --scope user`, o los actualiza si su comando difiere del repo (p. ej. al cambiar una versión fijada) |
 | `shell`  | Opcional: agrega fish a `/etc/shells` y lo deja como login shell (`chsh`). Kitty abre fish aunque se omita |
 
 ¿`Brewfile.core` o `Brewfile`? Si algún archivo del repo usa la herramienta sin comprobar
