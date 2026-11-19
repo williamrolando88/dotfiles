@@ -1,3 +1,7 @@
+# Default Modes
+
+At the start of every session, before your first reply, read `~/.agents/skills/ultracave/SKILL.md` and `~/.agents/skills/ponytail/SKILL.md` with your file-read tool and follow both (ponytail at level full) for the whole session, as if the user had invoked `/ultracave` and `/ponytail`. Read the files directly instead of using a skill tool: ultracave sets `disable-model-invocation`, so a skill tool may refuse it. They stay on until the user says "stop caveman", "stop ponytail" or "normal mode".
+
 # Environment & Terminal Context
 
 - **Terminal Emulator**: Kitty
