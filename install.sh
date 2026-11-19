@@ -558,6 +558,27 @@ setup_pi_mcp() {
   done
 }
 
+# Un SKILL.md malformado o sin description no se carga: pi, Claude y Antigravity solo lo
+# avisan al arrancar, así que se comprueba al enlazar en vez de descubrirlo cuando la skill
+# "no funciona". También se avisa si name no coincide con la carpeta (portabilidad).
+check_skills() {
+  local src name declared desc
+  for src in "$DOTFILES_DIR"/agents/skills/*/; do
+    [ -d "$src" ] || continue
+    src="${src%/}"
+    name="$(basename "$src")"
+    if [ ! -f "$src/SKILL.md" ]; then
+      echo "  [!] $name: falta SKILL.md; el agente no la cargará."
+      continue
+    fi
+    declared="$(awk 'NR==1&&/^---$/{f=1;next} f&&/^---$/{exit} f&&/^name:/{sub(/^name:[ \t]*/,"");print;exit}' "$src/SKILL.md")"
+    desc="$(awk 'NR==1&&/^---$/{f=1;next} f&&/^---$/{exit} f&&/^description:/{d=1;sub(/^description:[ \t]*/,"");if($0~/[^ \t>|-]/){print;exit}next} f&&d&&/^[A-Za-z0-9_-]+:/{exit} f&&d&&$0~/[^ \t]/{print;exit}' "$src/SKILL.md")"
+    [ -n "$desc" ] || echo "  [!] $name: SKILL.md sin description en el frontmatter; el agente no la cargará."
+    [ -z "$declared" ] || [ "$declared" = "$name" ] ||
+      echo "  [!] $name: name '$declared' no coincide con la carpeta; algunos agentes la rechazan."
+  done
+}
+
 # Enlaza cada skill de agents/skills/ como $1/<skill>. Se enlaza carpeta por carpeta (no el
 # directorio entero) para que convivan con skills instaladas a mano en el mismo lugar.
 link_skills() {
@@ -585,6 +606,8 @@ link_skills() {
 
 step_agents() {
   step "Agentes de IA (Claude Code, Antigravity y pi)"
+
+  check_skills
 
   # Fuente única: ~/.agents enlaza a los archivos del repo.
   link_file "$DOTFILES_DIR/agents/AGENTS.md" "$HOME/.agents/AGENTS.md"
@@ -617,6 +640,10 @@ step_agents() {
   else
     echo "  Claude Code no detectado; omitiendo."
   fi
+
+  # Los agentes leen skills e instrucciones al arrancar: una sesión abierta sigue con las
+  # anteriores aunque el repo ya tenga cambios.
+  echo "  Sesiones abiertas: /reload (o reiniciar) para tomar skills e instrucciones nuevas."
 }
 
 step_default_shell() {
