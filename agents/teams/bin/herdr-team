@@ -1,0 +1,650 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# herdr-team: Universal CLI to initialize, start, inspect, and manage Herdr multi-agent teams.
+# Triangulation: dotfiles -> ~/.agents -> <repo>/.agents
+
+AGENTS_HOME="${AGENTS_HOME:-$HOME/.agents}"
+DOTFILES_TEAMS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+usage() {
+  cat <<'EOF'
+Usage: herdr-team <command> [options]
+
+Commands:
+  init              Initialize clean .agents/ in the current project from templates
+  start             Boot or attach to the agent team defined in .agents/team.json
+  status            Show status of running agents and Herdr GUI spaces
+  restart           Soft-reset persistent specialists (/clear context and re-adopt persona)
+  stop              Stop ephemeral workers and show instructions to close session
+  help, -h, --help  Show this help message
+
+Options for 'start':
+  --ui              Mount/attach persistent team as named tabs in Herdr GUI (herdr-app)
+  --task "<text>"   Send an initial requirement/goal to technical-owner
+  --attach          Attach current terminal directly to technical-owner
+  --restart         Soft-reset persistent specialists before starting
+  --status          Show live team status and exit
+
+Options for 'init':
+  --preset <name>   Preset topology to use (default: fullstack)
+  --force, -f       Overwrite existing .agents/ without prompting
+EOF
+}
+
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Error: required command '$1' is not installed or not in PATH." >&2
+    exit 1
+  fi
+}
+
+ensure_agents_home() {
+  if [ ! -d "$AGENTS_HOME/roles" ] || [ ! -d "$AGENTS_HOME/templates" ] || [ ! -d "$AGENTS_HOME/presets" ]; then
+    echo "Warning: ~/.agents/ is missing roles, templates, or presets."
+    echo "Linking from dotfiles: $DOTFILES_TEAMS_DIR..."
+    mkdir -p "$AGENTS_HOME"
+    ln -sfn "$DOTFILES_TEAMS_DIR/roles" "$AGENTS_HOME/roles"
+    ln -sfn "$DOTFILES_TEAMS_DIR/templates" "$AGENTS_HOME/templates"
+    ln -sfn "$DOTFILES_TEAMS_DIR/presets" "$AGENTS_HOME/presets"
+  fi
+}
+
+cmd_init() {
+  local preset="fullstack"
+  local force=false
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --preset)
+        shift
+        [ $# -eq 0 ] && { echo "Error: --preset requires a value" >&2; exit 1; }
+        preset="$1"
+        ;;
+      --force|-f)
+        force=true
+        ;;
+      *)
+        echo "Unknown option for init: $1" >&2
+        exit 1
+        ;;
+    esac
+    shift
+  done
+
+  ensure_agents_home
+
+  local preset_file="$AGENTS_HOME/presets/${preset}.json"
+  if [ ! -f "$preset_file" ]; then
+    echo "Error: preset '$preset' not found at $preset_file" >&2
+    exit 1
+  fi
+
+  local target_dir="$PWD/.agents"
+  local project_name
+  project_name="$(basename "$PWD")"
+
+  if [ -d "$target_dir" ]; then
+    if [ "$force" = false ]; then
+      echo "Existing .agents/ directory found in $PWD."
+      read -r -p "Reset and re-initialize from scratch? (y/N): " confirm || true
+      if [[ ! "$confirm" =~ ^[yYsS]$ ]]; then
+        echo "Aborted. No changes made."
+        exit 0
+      fi
+    fi
+    echo "  [clean] Removing existing .agents/ directory..."
+    rm -rf "$target_dir"
+  fi
+
+  echo "  [init] Initializing .agents/ for project '$project_name' (preset: $preset)..."
+  mkdir -p "$target_dir/.runtime/tasks" "$target_dir/.runtime/worktrees" "$target_dir/logs"
+
+  ln -sfn "$AGENTS_HOME/roles" "$target_dir/roles"
+  ln -sfn "$AGENTS_HOME/templates" "$target_dir/templates"
+
+  # Generate team.json customized with project name
+  bun -e '
+    const fs = require("node:fs");
+    const raw = fs.readFileSync(process.argv[1], "utf8");
+    const projectName = process.argv[2];
+    const cfg = JSON.parse(raw);
+    cfg.project = projectName;
+    fs.writeFileSync(process.argv[3], JSON.stringify(cfg, null, 2) + "\n");
+  ' "$preset_file" "$project_name" "$target_dir/team.json"
+
+  echo "  [OK] Team configuration generated: .agents/team.json"
+  echo "  [OK] Roles linked: .agents/roles -> $AGENTS_HOME/roles"
+  echo "  [OK] Templates linked: .agents/templates -> $AGENTS_HOME/templates"
+  echo "  [OK] Runtime and logs directories created."
+  echo ""
+  echo "Team ready. Start your team with:"
+  echo "  herdr-team start --ui"
+  echo "  herdr-team start --task \"<your goal>\""
+}
+
+# ----------------- Runner Engine (start / restart / status) -----------------
+
+get_project_name() {
+  local team_config="$1"
+  bun -e '
+    const fs = require("node:fs");
+    const cfg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    console.log(cfg.project || require("node:path").basename(process.cwd()));
+  ' "$team_config"
+}
+
+get_persistent_roles() {
+  local team_config="$1"
+  bun -e '
+    const fs = require("node:fs");
+    const cfg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const roles = Object.entries(cfg.roles || {})
+      .filter(([_, r]) => r.lifecycle === "persistent")
+      .map(([name]) => name);
+    console.log(roles.join(" "));
+  ' "$team_config"
+}
+
+get_role_field() {
+  local team_config="$1"
+  local role="$2"
+  local field="$3"
+  bun -e '
+    const fs = require("node:fs");
+    const cfg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const role = cfg.roles[process.argv[2]];
+    if (!role || role[process.argv[3]] === undefined) process.exit(1);
+    const val = role[process.argv[3]];
+    console.log(Array.isArray(val) ? val.join(" ") : String(val));
+  ' "$team_config" "$role" "$field"
+}
+
+is_live_terminal() {
+  local name="$1"
+  hc ls --json 2>/dev/null | bun -e '
+    const fs = require("node:fs");
+    const target = process.argv[1];
+    const SHELLS = new Set(["fish", "bash", "zsh", "sh", "dash", "csh", "tcsh"]);
+    try {
+      const data = JSON.parse(fs.readFileSync(0, "utf8"));
+      const live = (data.terminals || []).some((t) => {
+        const matches = (
+          t.name === target ||
+          (t.labels && t.labels.role === target) ||
+          (t.where && t.where.endsWith(" / " + target))
+        );
+        const isLive = t.state === "live";
+        const isAgent = t.agent && !SHELLS.has(t.agent);
+        return matches && isLive && isAgent;
+      });
+      process.exit(live ? 0 : 1);
+    } catch {
+      process.exit(1);
+    }
+  ' "$name" >/dev/null 2>&1
+}
+
+get_live_terminal_addr() {
+  local name="$1"
+  hc ls --json 2>/dev/null | bun -e '
+    const fs = require("node:fs");
+    const target = process.argv[1];
+    const SHELLS = new Set(["fish", "bash", "zsh", "sh", "dash", "csh", "tcsh"]);
+    try {
+      const data = JSON.parse(fs.readFileSync(0, "utf8"));
+      const t = (data.terminals || []).find((t) => {
+        const matches = (
+          t.name === target ||
+          (t.labels && t.labels.role === target) ||
+          (t.where && t.where.endsWith(" / " + target))
+        );
+        const isLive = t.state === "live";
+        const isAgent = t.agent && !SHELLS.has(t.agent);
+        return matches && isLive && isAgent;
+      });
+      if (t && t.address) {
+        console.log(t.address);
+        process.exit(0);
+      }
+    } catch {}
+    process.exit(1);
+  ' "$name" 2>/dev/null || true
+}
+
+cleanup_stale_role_terminal() {
+  local name="$1"
+  local stale_addrs
+  stale_addrs=$(hc ls --all --json 2>/dev/null | bun -e '
+    const fs = require("node:fs");
+    const target = process.argv[1];
+    const SHELLS = new Set(["fish", "bash", "zsh", "sh", "dash", "csh", "tcsh"]);
+    try {
+      const data = JSON.parse(fs.readFileSync(0, "utf8"));
+      for (const t of data.terminals || []) {
+        const matches = (
+          t.name === target ||
+          (t.labels && t.labels.role === target) ||
+          (t.where && t.where.endsWith(" / " + target))
+        );
+        const isShellOrDead = t.state !== "live" || !t.agent || SHELLS.has(t.agent);
+        if (matches && isShellOrDead) {
+          console.log(t.address);
+        }
+      }
+    } catch {}
+  ' "$name" 2>/dev/null || true)
+
+  if [ -n "$stale_addrs" ]; then
+    while IFS= read -r addr; do
+      [ -z "$addr" ] && continue
+      echo "  [clean] Purging stale terminal $addr holding role '$name'..."
+      hc kill "$addr" >/dev/null 2>&1 || true
+      hc rm "$addr" >/dev/null 2>&1 || true
+    done <<< "$stale_addrs"
+  fi
+}
+
+cleanup_dead_terminals() {
+  local project_name="$1"
+  local dead_addrs
+  dead_addrs=$(hc ls --all --json 2>/dev/null | bun -e '
+    const fs = require("node:fs");
+    const proj = process.argv[1];
+    try {
+      const data = JSON.parse(fs.readFileSync(0, "utf8"));
+      for (const t of data.terminals || []) {
+        const isProject = (t.labels && t.labels.project === proj) || (t.where && t.where.startsWith(proj));
+        if (isProject && (t.state !== "live" || t.exit_code !== null)) {
+          console.log(t.address);
+        }
+      }
+    } catch {}
+  ' "$project_name" 2>/dev/null || true)
+
+  if [ -n "$dead_addrs" ]; then
+    while IFS= read -r addr; do
+      [ -z "$addr" ] && continue
+      hc rm "$addr" >/dev/null 2>&1 || true
+    done <<< "$dead_addrs"
+  fi
+}
+
+wait_for_agent_live() {
+  local name="$1"
+  local retries=25
+  while [ "$retries" -gt 0 ]; do
+    if [ -n "$(get_live_terminal_addr "$name")" ]; then
+      return 0
+    fi
+    sleep 0.2
+    retries=$((retries - 1))
+  done
+  return 1
+}
+
+ensure_herdr_window() {
+  if herdr-app status >/dev/null 2>&1; then
+    return 0
+  fi
+
+  echo "Launching Herdr GUI window (herdr-app)..."
+  nohup herdr-app >/dev/null 2>&1 &
+
+  local retries=30
+  while [ "$retries" -gt 0 ]; do
+    if herdr-app status >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.3
+    retries=$((retries - 1))
+  done
+
+  echo "Error: herdr-app window did not respond in time." >&2
+  exit 1
+}
+
+find_or_create_space() {
+  local project_name="$1"
+  local repo_root="$PWD"
+  local space_json
+  space_json=$(herdr-app ls 2>/dev/null || true)
+
+  local space_id
+  space_id=$(echo "$space_json" | bun -e '
+    const fs = require("node:fs");
+    const targetName = process.argv[1];
+    const targetFolder = process.argv[2];
+    try {
+      const data = JSON.parse(fs.readFileSync(0, "utf8"));
+      const spaces = data.spaces || [];
+      const match = spaces.find(s => s.name === targetName || s.folder === targetFolder);
+      if (match && match.id) {
+        console.log(match.id);
+        process.exit(0);
+      }
+    } catch {}
+    process.exit(1);
+  ' "$project_name" "$repo_root" 2>/dev/null || true)
+
+  if [ -n "$space_id" ]; then
+    herdr-app do space.select --id "$space_id" >/dev/null 2>&1 || true
+    echo "$space_id"
+    return 0
+  fi
+
+  local created_json new_space_id
+  created_json=$(herdr-app do space.new --name "$project_name" --folder "$repo_root" 2>/dev/null || true)
+  new_space_id=$(bun -e '
+    try {
+      const data = JSON.parse(process.argv[1]);
+      console.log(data.space || data.id || "");
+    } catch {}
+  ' "$created_json" 2>/dev/null || true)
+
+  if [ -n "$new_space_id" ]; then
+    herdr-app do space.select --id "$new_space_id" >/dev/null 2>&1 || true
+    echo "$new_space_id"
+    return 0
+  fi
+}
+
+cmd_start() {
+  local team_config="$PWD/.agents/team.json"
+  if [ ! -f "$team_config" ]; then
+    echo "Error: .agents/team.json not found in $PWD." >&2
+    echo "Run 'herdr-team init' first to initialize the team." >&2
+    exit 1
+  fi
+
+  local project_name
+  project_name="$(get_project_name "$team_config")"
+
+  local persistent_roles_str
+  persistent_roles_str="$(get_persistent_roles "$team_config")"
+  read -r -a persistent_roles <<< "$persistent_roles_str"
+
+  local initial_task=""
+  local do_attach=false
+  local do_ui=false
+  local do_restart=false
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --ui)
+        do_ui=true
+        ;;
+      --task)
+        shift
+        [ $# -eq 0 ] && { echo "Error: --task requires a value" >&2; exit 1; }
+        initial_task="$1"
+        ;;
+      --attach)
+        do_attach=true
+        ;;
+      --restart)
+        do_restart=true
+        ;;
+      --status)
+        cmd_status
+        exit 0
+        ;;
+      *)
+        echo "Unknown option for start: $1" >&2
+        usage
+        exit 1
+        ;;
+    esac
+    shift
+  done
+
+  require_cmd hc
+  require_cmd agy
+  require_cmd pi
+  require_cmd bun
+
+  if ! hc server status >/dev/null 2>&1; then
+    echo "Starting herdr-core (hc) server..."
+    hc server start
+  fi
+
+  mkdir -p "$PWD/.agents/.runtime/tasks" "$PWD/.agents/.runtime/worktrees" "$PWD/.agents/logs"
+
+  cleanup_dead_terminals "$project_name"
+
+  local booted_to_fresh=false
+
+  start_role() {
+    local name="$1"
+    local role_file=".agents/roles/${name}.md"
+    local cli model
+
+    if [ ! -f "$PWD/$role_file" ]; then
+      echo "Error: missing role file $PWD/$role_file" >&2
+      exit 1
+    fi
+
+    cli="$(get_role_field "$team_config" "$name" "cli")"
+    model="$(get_role_field "$team_config" "$name" "model")"
+
+    cleanup_stale_role_terminal "$name"
+
+    if is_live_terminal "$name"; then
+      echo "  [skip] $name is already live ($cli / $model)."
+      return 0
+    fi
+
+    echo "  [boot] Starting $name ($cli --model $model)..."
+    if [ "$cli" = "agy" ]; then
+      local prompt="Read ${role_file} and .agents/team.json completely and strictly adopt your role '${name}'. Your hc terminal name is '${name}'. All communication, thoughts, and messages must be strictly in English. Wait for messages via hc send."
+      if [ "$name" = "technical-owner" ] && [ -n "$initial_task" ]; then
+        prompt="${prompt} NEW REQUIREMENT FROM HUMAN LEAD: ${initial_task}"
+        booted_to_fresh=true
+      fi
+      hc run --bg --name "$name" --cwd "$PWD" \
+        --label "project=$project_name" --label "role=$name" \
+        agy --model "$model" --dangerously-skip-permissions -i "$prompt" >/dev/null
+      wait_for_agent_live "$name" || true
+    else
+      hc run --bg --name "$name" --cwd "$PWD" \
+        --label "project=$project_name" --label "role=$name" \
+        pi --model "$model" --append-system-prompt "$role_file" >/dev/null
+      hc wait "$name" >/dev/null
+    fi
+  }
+
+  soft_reset_role() {
+    local name="$1"
+    local role_file=".agents/roles/${name}.md"
+    local cli model
+
+    cli="$(get_role_field "$team_config" "$name" "cli")"
+    model="$(get_role_field "$team_config" "$name" "model")"
+
+    local term_addr
+    term_addr="$(get_live_terminal_addr "$name")"
+
+    if [ -n "$term_addr" ]; then
+      echo "  [reset] Soft-resetting $name ($term_addr)..."
+      hc interrupt "$term_addr" >/dev/null 2>&1 || true
+      hc send "$term_addr" "/clear" >/dev/null 2>&1 || true
+      sleep 0.4
+
+      local prompt="Read ${role_file} and .agents/team.json completely and strictly adopt your role '${name}'. Your hc terminal name is '${name}'. All communication, thoughts, and messages must be strictly in English. Wait for messages via hc send."
+      if [ "$name" = "technical-owner" ] && [ -n "$initial_task" ]; then
+        prompt="${prompt} NEW REQUIREMENT FROM HUMAN LEAD: ${initial_task}"
+        booted_to_fresh=true
+      fi
+      hc send "$term_addr" "$prompt" >/dev/null 2>&1 || true
+    else
+      echo "  [recover] $name is not live, booting fresh..."
+      cleanup_stale_role_terminal "$name"
+      start_role "$name"
+    fi
+  }
+
+  if [ "$do_restart" = true ]; then
+    echo "Soft-resetting persistent core team for $project_name..."
+    for r in "${persistent_roles[@]}"; do
+      soft_reset_role "$r"
+    done
+    echo "All persistent agents reset to clean state."
+  else
+    echo "Booting persistent core team for $project_name..."
+    for r in "${persistent_roles[@]}"; do
+      start_role "$r"
+    done
+    echo "All persistent agents booted."
+  fi
+
+  if [ "$do_ui" = true ]; then
+    require_cmd herdr-app
+    ensure_herdr_window
+
+    echo "Mounting persistent team tabs in Herdr GUI (space: $project_name)..."
+    local space_id
+    space_id="$(find_or_create_space "$project_name")"
+    if [ -n "$space_id" ]; then
+      herdr-app do space.select --id "$space_id" >/dev/null 2>&1 || true
+    fi
+
+    local ls_snapshot
+    ls_snapshot="$(herdr-app ls 2>/dev/null || true)"
+
+    for r in "${persistent_roles[@]}"; do
+      local term_addr
+      term_addr="$(get_live_terminal_addr "$r")"
+      [ -z "$term_addr" ] && continue
+
+      local has_pane
+      has_pane=$(echo "$ls_snapshot" | bun -e '
+        const fs = require("node:fs");
+        const targetSpace = process.argv[1];
+        const targetAddr = process.argv[2];
+        try {
+          const data = JSON.parse(fs.readFileSync(0, "utf8"));
+          const s = (data.spaces || []).find(space => space.id === targetSpace);
+          if (!s) process.exit(1);
+          for (const tab of s.tabs || []) {
+            if ((tab.terminals || []).some(t => t.terminal === targetAddr)) {
+              process.exit(0);
+            }
+          }
+        } catch {}
+        process.exit(1);
+      ' "$space_id" "$term_addr" 2>/dev/null && echo "yes" || echo "no")
+
+      if [ "$has_pane" = "yes" ]; then
+        echo "  [ui] $r ($term_addr) already mounted."
+        continue
+      fi
+
+      if [ -n "$space_id" ]; then
+        herdr-app do space.select --id "$space_id" >/dev/null 2>&1 || true
+      fi
+
+      local keep_res tab_id retries=10
+      while [ "$retries" -gt 0 ]; do
+        keep_res=$(herdr-app do terminal.keep --terminal "$term_addr" --place tab 2>/dev/null || true)
+        tab_id=$(bun -e '
+          try {
+            const data = JSON.parse(process.argv[1]);
+            if (data.tab) console.log(data.tab);
+          } catch {}
+        ' "$keep_res" 2>/dev/null || true)
+        if [ -n "$tab_id" ]; then
+          break
+        fi
+        sleep 0.3
+        retries=$((retries - 1))
+      done
+
+      if [ -n "$tab_id" ]; then
+        herdr-app do tab.rename --id "$tab_id" --name "$r" >/dev/null 2>&1 || true
+        echo "  [ui] Mounted tab '$r' ($tab_id on $term_addr)"
+      fi
+    done
+
+    local to_addr
+    to_addr="$(get_live_terminal_addr "technical-owner")"
+    if [ -n "$to_addr" ]; then
+      herdr-app do agent.focus --terminal "$to_addr" >/dev/null 2>&1 || true
+    fi
+    echo "Herdr GUI ready: focused on 'technical-owner' tab."
+  fi
+
+  if [ -n "$initial_task" ] && [ "$booted_to_fresh" = false ]; then
+    local to_addr
+    to_addr="$(get_live_terminal_addr "technical-owner")"
+    if [ -n "$to_addr" ]; then
+      echo "Dispatching initial goal to technical-owner ($to_addr)..."
+      hc send "$to_addr" "NEW REQUIREMENT FROM HUMAN LEAD: $initial_task"
+    fi
+  fi
+
+  if [ "$do_attach" = true ]; then
+    exec hc attach technical-owner
+  fi
+
+  echo ""
+  echo "Team ready. Interact via:"
+  echo "  herdr-team start --ui"
+  echo "  hc attach technical-owner"
+  echo "  hc send technical-owner \"<your requirement>\""
+}
+
+cmd_status() {
+  local team_config="$PWD/.agents/team.json"
+  if [ -f "$team_config" ]; then
+    local project_name
+    project_name="$(get_project_name "$team_config")"
+    echo "=== Active Team Status for '$project_name' (hc) ==="
+  else
+    echo "=== Active Herdr Terminals (hc) ==="
+  fi
+  hc ls
+  if command -v herdr-app >/dev/null 2>&1 && herdr-app status >/dev/null 2>&1; then
+    echo ""
+    echo "=== Herdr GUI Spaces ==="
+    herdr-app ls
+  fi
+}
+
+cmd_stop() {
+  echo "Note: Persistent team agents run continuously and do not need to be stopped."
+  echo "To reset agents to a clean state between tasks, use: herdr-team restart"
+  echo "To close the multi-agent session completely, simply close the Herdr GUI window."
+}
+
+# ----------------- Dispatcher -----------------
+
+[ $# -eq 0 ] && { usage; exit 0; }
+
+ACTION="$1"
+shift
+
+case "$ACTION" in
+  init)
+    cmd_init "$@"
+    ;;
+  start)
+    cmd_start "$@"
+    ;;
+  restart)
+    cmd_start --restart "$@"
+    ;;
+  status)
+    cmd_status
+    ;;
+  stop)
+    cmd_stop
+    ;;
+  help|-h|--help)
+    usage
+    ;;
+  *)
+    echo "Unknown command: $ACTION" >&2
+    usage
+    exit 1
+    ;;
+esac

@@ -1,0 +1,4 @@
+# Global gitignore (managed by dotfiles)
+
+# Local ephemeral agent teams (herdr-team)
+.agents/

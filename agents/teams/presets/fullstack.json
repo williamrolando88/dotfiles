@@ -1,0 +1,293 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "project": "{{PROJECT_NAME}}",
+  "version": "1.0.0",
+  "orchestrator": "herdr-core",
+  "gui": "herdr-app",
+  "conventions_file": "AGENTS.md",
+  "entrypoint": {
+    "role": "technical-owner",
+    "script": "herdr-team start"
+  },
+  "logs_dir": ".agents/logs",
+  "runtime_dir": ".agents/.runtime",
+  "language_policy": "All team communication, RFCs, task specifications, code reviews, decision logs, and inter-agent messages must be strictly in English.",
+  "git_workflow": {
+    "protected_branches": ["main"],
+    "feature_branch_pattern": "feat/<rfc-slug>",
+    "ephemeral_branch_pattern": "task/<task-id>",
+    "worktree_root": ".agents/.runtime/worktrees",
+    "merge_strategy": "no-ff",
+    "integration_to_main": "github_pr",
+    "pr_creators": ["lead-architect", "technical-owner"],
+    "pr_cli": "gh pr create",
+    "hooks": {
+      "pre_commit": "",
+      "pre_push": ""
+    },
+    "require_joint_signoff_before_pr": true
+  },
+  "roles": {
+    "technical-owner": {
+      "terminal_name": "technical-owner",
+      "title": "Technical Owner (Entrypoint, Arbitrator, PR Manager & Product Acceptor)",
+      "lifecycle": "persistent",
+      "zero_context": false,
+      "cli": "agy",
+      "model": "gemini-3.8-flash-high",
+      "flags": ["--dangerously-skip-permissions"],
+      "capabilities": [
+        "text",
+        "image",
+        "reasoning",
+        "arbitration",
+        "github-pr-management",
+        "pr-review-resolution"
+      ],
+      "role_file": ".agents/roles/technical-owner.md",
+      "can_spawn": [],
+      "can_kill": [],
+      "can_edit_code": false,
+      "can_amend_agents_md": false,
+      "communicates_with": [
+        "human-lead",
+        "lead-architect",
+        "qa-engineer"
+      ]
+    },
+    "lead-architect": {
+      "terminal_name": "lead-architect",
+      "title": "Lead System Architect (Contracts, Integrator, Base DevOps & Escalation)",
+      "lifecycle": "persistent",
+      "zero_context": false,
+      "cli": "agy",
+      "model": "gemini-3.8-flash-high",
+      "flags": ["--dangerously-skip-permissions"],
+      "capabilities": ["text", "image", "reasoning", "system-design"],
+      "role_file": ".agents/roles/lead-architect.md",
+      "can_spawn": [
+        "infra-specialist",
+        "qa-engineer",
+        "ui-ux-designer"
+      ],
+      "can_kill": [
+        "infra-specialist",
+        "qa-engineer",
+        "ui-ux-designer"
+      ],
+      "can_edit_code": false,
+      "can_propose_agents_amendment": true,
+      "reports_to": "technical-owner",
+      "communicates_with": [
+        "technical-owner",
+        "backend-architect",
+        "frontend-architect",
+        "qa-engineer",
+        "infra-specialist",
+        "ui-ux-designer"
+      ]
+    },
+    "backend-architect": {
+      "terminal_name": "backend-architect",
+      "title": "Backend Adversarial Architect (Design Critic, Effort Sizer, Reviewer & Pool Manager)",
+      "lifecycle": "persistent",
+      "zero_context": false,
+      "cli": "agy",
+      "model": "gemini-3.8-flash-high",
+      "flags": ["--dangerously-skip-permissions"],
+      "capabilities": ["text", "reasoning", "code-review"],
+      "role_file": ".agents/roles/backend-architect.md",
+      "can_spawn": [
+        "implementer-backend"
+      ],
+      "can_kill": [
+        "implementer-backend"
+      ],
+      "scope": [],
+      "reports_to": "lead-architect",
+      "communicates_with": [
+        "lead-architect",
+        "implementer-backend"
+      ]
+    },
+    "frontend-architect": {
+      "terminal_name": "frontend-architect",
+      "title": "Frontend Adversarial Architect (Design Critic, Effort Sizer, Reviewer & Pool Manager)",
+      "lifecycle": "persistent",
+      "zero_context": false,
+      "cli": "agy",
+      "model": "gemini-3.8-flash-high",
+      "flags": ["--dangerously-skip-permissions"],
+      "capabilities": ["text", "image", "reasoning", "code-review"],
+      "role_file": ".agents/roles/frontend-architect.md",
+      "can_spawn": [
+        "implementer-frontend"
+      ],
+      "can_kill": [
+        "implementer-frontend"
+      ],
+      "scope": [],
+      "reports_to": "lead-architect",
+      "communicates_with": [
+        "lead-architect",
+        "implementer-frontend",
+        "ui-ux-designer"
+      ]
+    },
+    "qa-engineer": {
+      "terminal_name": "qa-<ticket>",
+      "title": "Ephemeral QA Engineer (Zero-Context E2E Playwright & Full-Stack Validator)",
+      "lifecycle": "ephemeral",
+      "zero_context": true,
+      "cli": "pi",
+      "model": "deepseek/deepseek-v4.1-flash-eco",
+      "flags": ["--no-session"],
+      "capabilities": ["text", "image", "reasoning", "playwright"],
+      "role_file": ".agents/roles/qa-engineer.md",
+      "can_spawn": [],
+      "can_kill": [],
+      "scope": ["e2e"],
+      "reports_to": [
+        "lead-architect",
+        "technical-owner"
+      ],
+      "communicates_with": [
+        "lead-architect",
+        "technical-owner"
+      ]
+    },
+    "implementer-backend": {
+      "terminal_name": "imp-back-<ticket>",
+      "title": "Ephemeral Backend Implementer (Zero-Context Code + Unit Tests)",
+      "lifecycle": "ephemeral",
+      "zero_context": true,
+      "cli": "pi",
+      "model": "deepseek/deepseek-v4.1-flash-eco",
+      "flags": ["--no-session"],
+      "capabilities": ["text", "image", "reasoning"],
+      "role_file": ".agents/roles/implementer-backend.md",
+      "max_remediation_loops": 3,
+      "can_spawn": [],
+      "can_kill": [],
+      "reports_to": "backend-architect"
+    },
+    "implementer-frontend": {
+      "terminal_name": "imp-front-<ticket>",
+      "title": "Ephemeral Frontend Implementer (Zero-Context Code + Unit Tests)",
+      "lifecycle": "ephemeral",
+      "zero_context": true,
+      "cli": "pi",
+      "model": "deepseek/deepseek-v4.1-flash-eco",
+      "flags": ["--no-session"],
+      "capabilities": ["text", "image", "reasoning"],
+      "role_file": ".agents/roles/implementer-frontend.md",
+      "max_remediation_loops": 3,
+      "can_spawn": [],
+      "can_kill": [],
+      "reports_to": "frontend-architect"
+    },
+    "infra-specialist": {
+      "terminal_name": "infra-<ticket>",
+      "title": "Ephemeral DevOps / Container Specialist",
+      "lifecycle": "ephemeral",
+      "zero_context": true,
+      "cli": "pi",
+      "model": "deepseek/deepseek-v4.1-flash-eco",
+      "flags": ["--no-session"],
+      "capabilities": ["text", "image", "reasoning"],
+      "role_file": ".agents/roles/infra-specialist.md",
+      "can_spawn": [],
+      "can_kill": [],
+      "scope": [
+        "docker",
+        "docker-compose.yml",
+        "scripts"
+      ],
+      "reports_to": "lead-architect"
+    },
+    "ui-ux-designer": {
+      "terminal_name": "ui-ux-<ticket>",
+      "title": "Ephemeral UI/UX Design Specialist (Mobile-First, Storybook & Spec Author)",
+      "lifecycle": "ephemeral",
+      "zero_context": true,
+      "cli": "agy",
+      "model": "gemini-3.8-flash-high",
+      "flags": ["--dangerously-skip-permissions"],
+      "capabilities": ["text", "image", "reasoning", "ui-ux-design"],
+      "role_file": ".agents/roles/ui-ux-designer.md",
+      "can_spawn": [],
+      "can_kill": [],
+      "scope": [
+        "ui",
+        "design-system",
+        "storybook",
+        "specs"
+      ],
+      "reports_to": [
+        "lead-architect",
+        "frontend-architect"
+      ],
+      "communicates_with": [
+        "lead-architect",
+        "frontend-architect"
+      ]
+    }
+  },
+  "protocols": {
+    "design_debate": {
+      "max_rounds": 2,
+      "participants": [
+        "lead-architect",
+        "backend-architect",
+        "frontend-architect"
+      ],
+      "tie_breaker": "technical-owner",
+      "log_file": ".agents/logs/<rfc-id>/01-rfc-design.md",
+      "template": ".agents/templates/RFC_DESIGN.md"
+    },
+    "ui_design_review": {
+      "participants": [
+        "lead-architect",
+        "frontend-architect",
+        "ui-ux-designer"
+      ],
+      "template": ".agents/templates/UI_SPEC.md",
+      "spec_dir": ".agents/specs"
+    },
+    "architectural_friction_escalation": {
+      "path": [
+        "layer-architect",
+        "lead-architect",
+        "technical-owner",
+        "human-lead"
+      ],
+      "log_file": ".agents/logs/<rfc-id>/02-architectural-friction.md",
+      "template": ".agents/templates/ARCHITECTURAL_FRICTION.md"
+    },
+    "agents_md_amendment": {
+      "initiator": "lead-architect",
+      "gatekeepers": [
+        "technical-owner",
+        "human-lead"
+      ],
+      "log_file": ".agents/logs/<rfc-id>/03-agents-amendment.md",
+      "template": ".agents/templates/AGENTS_AMENDMENT.md"
+    },
+    "task_handover": {
+      "runtime_file": ".agents/.runtime/tasks/task-<task-id>.md",
+      "review_log_file": ".agents/logs/<rfc-id>/04-review-log.md",
+      "template": ".agents/templates/TASK_HANDOVER.md",
+      "require_unit_tests": true,
+      "require_check_gate": ""
+    },
+    "e2e_acceptance": {
+      "executor": "qa-engineer",
+      "decision_committee": [
+        "lead-architect",
+        "technical-owner"
+      ],
+      "log_file": ".agents/logs/<rfc-id>/05-qa-e2e-report.md",
+      "template": ".agents/templates/QA_E2E_REPORT.md"
+    }
+  }
+}

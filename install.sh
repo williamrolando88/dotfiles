@@ -426,6 +426,7 @@ step_links() {
   step "Symlinks de configuración"
   # Shell & Terminal (kitty incluye macos.conf o linux.conf según el SO)
   link_file "$DOTFILES_DIR/fish/config.fish" "$HOME/.config/fish/config.fish"
+  link_file "$DOTFILES_DIR/fish/completions/herdr-team.fish" "$HOME/.config/fish/completions/herdr-team.fish"
   link_file "$DOTFILES_DIR/kitty/kitty.conf" "$HOME/.config/kitty/kitty.conf"
   link_file "$DOTFILES_DIR/kitty/macos.conf" "$HOME/.config/kitty/macos.conf"
   link_file "$DOTFILES_DIR/kitty/linux.conf" "$HOME/.config/kitty/linux.conf"
@@ -433,6 +434,7 @@ step_links() {
 
   # Git
   link_file "$DOTFILES_DIR/git/.gitconfig" "$HOME/.gitconfig"
+  link_file "$DOTFILES_DIR/git/ignore" "$HOME/.config/git/ignore"
 }
 
 # Claude Code no lee ~/.agents/AGENTS.md ni un mcp.json externo de forma persistente:
@@ -613,6 +615,12 @@ step_agents() {
   link_file "$DOTFILES_DIR/agents/AGENTS.md" "$HOME/.agents/AGENTS.md"
   link_file "$DOTFILES_DIR/agents/mcp.json" "$HOME/.agents/mcp.json"
   link_skills "$HOME/.agents/skills"
+
+  # Equipos multi-agente (herdr-team)
+  link_file "$DOTFILES_DIR/agents/teams/roles" "$HOME/.agents/roles"
+  link_file "$DOTFILES_DIR/agents/teams/templates" "$HOME/.agents/templates"
+  link_file "$DOTFILES_DIR/agents/teams/presets" "$HOME/.agents/presets"
+  link_file "$DOTFILES_DIR/agents/teams/bin/herdr-team" "$HOME/.local/bin/herdr-team"
 
   # pi lee las skills globales desde ~/.agents/skills y su contexto global (AGENTS.md) desde
   # ~/.pi/agent/. Su MCP también va ahí, pero como copia: pi lo reescribe (ver setup_pi_mcp)
