@@ -494,6 +494,70 @@ setup_claude_code() {
   done
 }
 
+# pi no lee ~/.agents/mcp.json: su MCP vive en ~/.pi/agent/mcp.json. Se copia en lugar de
+# enlazar porque pi escribe en ese archivo (enabled, exposure y servidores propios vía /mcp o
+# `pi mcp add`), y con un symlink esos cambios acabarían en el mcp.json del repo, que
+# Antigravity lee en vivo. Del repo solo se sincronizan las claves que él define; el resto
+# del archivo local se conserva.
+setup_pi_mcp() {
+  local src="$DOTFILES_DIR/agents/mcp.json" dst="$HOME/.pi/agent/mcp.json"
+  local name server current merged
+
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "  [!] jq no está instalado (ejecuta ./install.sh core); omitiendo el MCP de pi."
+    return
+  fi
+
+  # Una instalación anterior enlazaba el archivo: se convierte en copia propia sin perder nada
+  if [ -L "$dst" ]; then
+    if [ -e "$dst" ]; then
+      merged="$(cat "$dst")"
+      rm "$dst"
+      printf '%s\n' "$merged" > "$dst"
+      echo "  [~] ~/.pi/agent/mcp.json convertido de symlink a archivo propio"
+    else
+      rm "$dst"
+      echo "  [~] Symlink roto eliminado: ~/.pi/agent/mcp.json"
+    fi
+  fi
+
+  if [ -s "$dst" ] && ! jq -e 'type == "object"' "$dst" >/dev/null 2>&1; then
+    echo "  [!] ~/.pi/agent/mcp.json no es un objeto JSON válido; no se modifica."
+    return
+  fi
+
+  for name in $(jq -r '.mcpServers | keys[]' "$src"); do
+    server="$(jq -c --arg n "$name" '.mcpServers[$n]' "$src")"
+    # Se comparan solo las claves del repo: 'enabled', 'exposure' o servidores propios son locales
+    current=""
+    if [ -s "$dst" ] && jq -e --arg n "$name" '.mcpServers // {} | has($n)' "$dst" >/dev/null 2>&1; then
+      current="$(jq -c --arg n "$name" --argjson w "$server" \
+        '.mcpServers[$n] as $e | $w | with_entries(.value = $e[.key])' "$dst")"
+    fi
+
+    if [ "$current" = "$server" ]; then
+      echo "  [=] MCP '$name' ya sincronizado en ~/.pi/agent/mcp.json"
+      continue
+    fi
+
+    if [ -n "$current" ] && ! confirm "¿Actualizar '$name' en ~/.pi/agent/mcp.json? ($current -> $server)"; then
+      echo "  MCP '$name' sin cambios."
+      continue
+    fi
+
+    # Fusiona: actualiza lo que define el repo y deja intacto lo que pi guardó en local
+    if [ -s "$dst" ]; then
+      merged="$(jq --arg n "$name" --argjson s "$server" \
+        '(.mcpServers // {}) as $m | .mcpServers = ($m + {($n): (($m[$n] // {}) + $s)})' "$dst")"
+    else
+      merged="$(jq -n --arg n "$name" --argjson s "$server" '{mcpServers: {($n): $s}}')"
+    fi
+    mkdir -p "$(dirname "$dst")"
+    printf '%s\n' "$merged" > "$dst"
+    echo "  [OK] MCP '$name' registrado en ~/.pi/agent/mcp.json"
+  done
+}
+
 # Enlaza cada skill de agents/skills/ como $1/<skill>. Se enlaza carpeta por carpeta (no el
 # directorio entero) para que convivan con skills instaladas a mano en el mismo lugar.
 link_skills() {
@@ -522,16 +586,26 @@ link_skills() {
 step_agents() {
   step "Agentes de IA (Claude Code, Antigravity y pi)"
 
-  # Fuente única: ~/.agents enlaza a los archivos del repo. pi lee las skills de ~/.agents/skills
+  # Fuente única: ~/.agents enlaza a los archivos del repo.
   link_file "$DOTFILES_DIR/agents/AGENTS.md" "$HOME/.agents/AGENTS.md"
   link_file "$DOTFILES_DIR/agents/mcp.json" "$HOME/.agents/mcp.json"
   link_skills "$HOME/.agents/skills"
 
-  # Antigravity CLI lee GEMINI.md y mcp_config.json (mismo formato mcpServers) desde
-  # ~/.gemini/config, y las skills globales desde ~/.gemini/skills
+  # pi lee las skills globales desde ~/.agents/skills y su contexto global (AGENTS.md) desde
+  # ~/.pi/agent/. Su MCP también va ahí, pero como copia: pi lo reescribe (ver setup_pi_mcp)
+  if command -v pi >/dev/null 2>&1 || [ -d "$HOME/.pi" ]; then
+    link_file "$HOME/.agents/AGENTS.md" "$HOME/.pi/agent/AGENTS.md"
+    setup_pi_mcp
+  else
+    echo "  pi no detectado; omitiendo."
+  fi
+
+  # Antigravity CLI lee GEMINI.md, mcp_config.json y skills/ desde ~/.gemini/config
+  # (además de ~/.gemini/skills)
   if command -v agy >/dev/null 2>&1 || [ -d "$HOME/.gemini" ]; then
     link_file "$HOME/.agents/AGENTS.md" "$HOME/.gemini/config/GEMINI.md"
     link_file "$HOME/.agents/mcp.json" "$HOME/.gemini/config/mcp_config.json"
+    link_skills "$HOME/.gemini/config/skills"
     link_skills "$HOME/.gemini/skills"
   else
     echo "  Antigravity no detectado; omitiendo."
