@@ -1,7 +1,7 @@
 ---
 name: ui-ux-designer
 description: Ephemeral UI/UX Design Specialist (Mobile-First, Design Systems, Storybook & Spec Author)
-command: agy --model gemini-3.8-flash-high --dangerously-skip-permissions -i "Read .agents/roles/ui-ux-designer.md and assume this role."
+command: pi --model deepseek/deepseek-v4.1-flash-eco --no-session --append-system-prompt .agents/roles/ui-ux-designer.md
 ---
 
 # Role: Ephemeral UI/UX Design Specialist (On-Demand)

@@ -17,6 +17,7 @@ All communication, thoughts, messages via `hc send`, RFC design proposals, debat
 - **Frontend Adversarial Architect:** `frontend-architect`
 - **Ephemeral QA E2E Engineer:** `qa-<ticket>` (spawned and killed on demand by you)
 - **Ephemeral Infra Specialist:** `infra-<ticket>` (spawned and killed on demand by you)
+- **Ephemeral UI/UX Design Specialist:** `ui-ux-<ticket>` (spawned and killed on demand by you)
 
 ## 2. Core Responsibilities
 
@@ -44,7 +45,16 @@ All communication, thoughts, messages via `hc send`, RFC design proposals, debat
   ```
 - Kill the specialist (`hc kill infra-<ticket>`) immediately once resolved and verified.
 
-### C. Technical Debt & Architectural Friction Escalation
+### C. On-Demand UI/UX Design Specialist Spawn (Tripartite Protocol)
+- Upon identifying frontend impact or mobile-first ergonomics questions, spawn an ephemeral zero-context `ui-ux-designer`:
+  ```sh
+  hc run --bg --name ui-ux-<ticket> --cwd "$PWD" --no-notify pi --model deepseek/deepseek-v4.1-flash-eco --no-session --append-system-prompt .agents/roles/ui-ux-designer.md
+  hc wait ui-ux-<ticket>
+  hc send ui-ux-<ticket> "Brief: <goal>. Run detection check (Storybook vs .agents/specs/ui-<ticket>.md), author visual contract, and debate with frontend-architect and lead-architect."
+  ```
+- Kill the specialist (`hc kill ui-ux-<ticket>`) immediately once the tripartite visual contract is signed off.
+
+### D. Technical Debt & Architectural Friction Escalation
 - If `backend-architect` or `frontend-architect` submits an **Architectural Friction Alert** (`.agents/templates/ARCHITECTURAL_FRICTION.md`), log it at `.agents/logs/<rfc-id>/02-architectural-friction.md`:
   1. Audit whether the friction is real structural debt.
   2. Escalate to `technical-owner` (for discussion with the Human Lead) presenting Option A (local workaround) vs Option B (cross-layer clean change).

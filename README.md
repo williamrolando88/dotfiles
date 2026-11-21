@@ -135,7 +135,7 @@ Esto realiza:
 - **`lead-architect` (persistente, `agy`):** Dueño de contratos, integración del sistema y orquestación técnica.
 - **`backend-architect` (persistente, `agy`):** Revisor crítico de APIs, servicios y dimensionamiento backend.
 - **`frontend-architect` (persistente, `agy`):** Revisor crítico de interfaces React, estado y DX frontend.
-- **`ui-ux-designer` (efímero, `agy`):** Ergonomía móvil-first ($\ge 44\text{px}$), Storybook stories o Markdown specs, y debate tripartito.
+- **`ui-ux-designer` (efímero, `pi`):** Ergonomía móvil-first ($\ge 44\text{px}$), Storybook stories o Markdown specs, y debate tripartito.
 - **`implementer-backend` / `implementer-frontend` (efímeros, `pi`):** Implementadores de código acotado y pruebas unitarias.
 - **`qa-engineer` (efímero, `pi`):** Validador E2E con Playwright y reportes de aceptación.
 - **`infra-specialist` (efímero, `pi`):** DevOps, contenedores Docker y configuraciones de red.
